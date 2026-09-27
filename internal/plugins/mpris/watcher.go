@@ -98,11 +98,11 @@ func (p *MPRISPlugin) runDBusWatcher(ctx context.Context) error {
 			}
 
 			switch sig.Name {
-			case "NameOwnerChanged":
+			case "org.freedesktop.DBus.NameOwnerChanged":
 				p.handleNameOwnerChanged(sig, conn, uniqueToDisplay)
-			case "Seeked":
+			case "org.mpris.MediaPlayer2.Player.Seeked":
 				p.handleSeeked(sig, uniqueToDisplay)
-			case "PropertiesChanged":
+			case "org.freedesktop.DBus.Properties.PropertiesChanged":
 				p.handlePropertiesChanged(sig, uniqueToDisplay)
 			}
 		}
