@@ -91,23 +91,25 @@ Connected steady state (all pairs connected, nothing playing, no transfers, no p
 | mDNS browse | Same owned lifetime as broadcast (probes are periodic by library design) |
 | mDNS advertise | Lifetime-on, responder-only (no timers) |
 | UDP/TCP/IPC listeners, D-Bus signals, bus subscriptions | Blocking waits, zero CPU until an event arrives |
-| Local position poller | Exists only while ≥1 local player `IsPlaying` (`[mpris] poll_while_playing`, `position_interval`); ticks re-broadcast only on metadata change or position drift >3s off the anchor extrapolation |
-| MPRIS watchdog | 10s re-check, alive only while ≥1 local player is tracked; restarts the position poller if it finds unpolled playback (see below) |
+| Local position poller | Exists only while ≥1 local player `IsPlaying` (`[mpris] poll_while_playing`, `position_interval`); armed by D-Bus signals, ticks re-broadcast only on metadata change or position drift >3s off the anchor extrapolation |
 | Remote state poller | Ticker itself exists only while a client subscribes to `mpris.update` (bus subscriber-change hook starts/stops it) |
 | Reconnect redial | Parked on discovery sightings; fallback escalates to `fallback_max`, then gives up past `stale_after` until the next sighting |
 | TCP keepalive | Kernel probes, first delay `[network] keepalive_idle` (default 30s, minimum 10s) |
 
-### The one deliberate exception: the MPRIS watchdog
-
-The position poller arms on an observed state change and stops as soon as a live read confirms nothing is playing. Restarting it therefore depends on a D-Bus `PlaybackStatus` signal arriving — and a missed signal strands the poller for the rest of the session, leaving the phone's now-playing frozen while audio plays. Firefox's MPRIS endpoint answers intermittently, so a dropped edge is routine rather than a corner case.
-
-So while any local player is tracked, a 10s watchdog samples live state and re-arms the poller if it finds unpolled playback. This bounds the stale window regardless of signal reliability.
-
-The cost: with an MPRIS application open but paused, the daemon performs one D-Bus read per 10s. **"Zero timers at idle" means zero when no MPRIS player is tracked**, not zero on a desktop with a media player merely running. This is a deliberate trade — a bounded ~6 reads/min beats an unbounded frozen now-playing display.
+There are no standing timers. The position poller is armed by D-Bus signals and self-stops on a confirmed pause, so a tracked-but-paused player costs zero wakeups — exactly like an untracked one.
 
 Measured 2026-09-25 (phone connected, Firefox playing): 7.5 CPU ticks/min, 0 voluntary context switches. Idle with no MPRIS player tracked: 0.00 CPU ticks/min, 0 `GetAll`/min. Methodology note: Go timers are runtime-managed (no timerfds to count) and `ptrace` is restricted by Yama, so `/proc` CPU deltas + `dbus-monitor` call rates are the working proxies.
 
-**Contributor invariant: new periodic work must be owner-gated or activity-gated, never standing.** A ticker that fires while nothing is happening is a bug — gate it on owners (discovery), playback state (MPRIS), subscribers (remote refresh), or sightings (reconnect). Where a signal-driven design cannot be made reliable, add a slow self-healing check scoped to the thing it watches, and document it here as a known cost rather than quietly reintroducing a standing timer.
+### The signal path is load-bearing
+
+The poller has no self-healing timer, so every arm and disarm rides on D-Bus signal delivery. Two details are easy to get wrong and both have already caused a total outage:
+
+- **godbus reports `Signal.Name` as `<interface>.<member>`, not the bare member.** Dispatch compares the fully qualified name (`org.mpris.MediaPlayer2.Player.Seeked`); match rules passed to `AddMatchSignal` use the bare member (`Seeked`). The two spellings are not interchangeable, and matching the wrong one silently drops every signal with no error anywhere.
+- **Match rules use `WithMatchInterface` + `WithMatchMember`, never the unfiltered rule.** The fully qualified name is not a legal value for `WithMatchMember`, and the daemon closes with an invalid-argument error, which surfaces as a crash-looping watcher rather than a dropped signal.
+
+`classifySignal` in `internal/plugins/mpris/signals.go` is the single place that maps a signal name to a handler, and it is table-tested against both the qualified and the bare spellings. Keep it that way; a `switch` inline in the watcher loop cannot be unit-tested and that is precisely how the bare-name bug survived so long.
+
+**Contributor invariant: new periodic work must be owner-gated or activity-gated, never standing.** A ticker that fires while nothing is happening is a bug — gate it on owners (discovery), playback state (MPRIS), subscribers (remote refresh), or sightings (reconnect). Do not add a slow self-healing timer to paper over unreliable event delivery: fix the event path instead. An earlier build carried a 10s watchdog that re-armed the poller on missed signals, which cost ~6 D-Bus reads/min on every desktop with a paused media player. It was removed once signal routing was fixed and measured to never fire.
 
 ---
 

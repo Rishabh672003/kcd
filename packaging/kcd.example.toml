@@ -193,13 +193,12 @@ remotesystemvolume = true
 # The local D-Bus watcher is event-driven; this section tunes the position
 # poller that keeps the phone's now-playing display exact while music plays.
 # poll_while_playing = true  # false = pure event-driven (position extrapolates
-                             # from posAnchorMs; no poller and no watchdog, so a
-                             # dropped D-Bus signal can leave the display stale)
+                             # from posAnchorMs; no poller at all, so a dropped
+                             # D-Bus signal can leave the display stale)
 # position_interval = "2s"    # D-Bus re-read cadence while playing only.
-                             # While a player is tracked but paused, a 10s
-                             # watchdog still runs so a missed play signal cannot
-                             # strand the poller; with no player tracked, zero
-                             # timers remain.
+                             # D-Bus signals arm the poller on playback and it
+                             # stops itself on a confirmed pause, so a paused
+                             # or absent player costs zero wakeups.
 
 [cache]
 # Empty values preserve existing storage paths; use absolute paths to override.

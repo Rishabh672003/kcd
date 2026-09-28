@@ -324,11 +324,9 @@ except KeyboardInterrupt:
 > stays silent — the phone extrapolates from `posAnchorMs` — and a tick
 > re-broadcasts only on a metadata change or when the true position drifts
 > more than 3s off the extrapolation (seek, missed signal, clock drift).
-> With no player running at all, nothing is polled — a silent desktop costs
-> zero wakeups. While a player is merely paused, a 10s watchdog re-checks
-> live state and restarts the poller if playback resumed without the daemon
-> seeing the signal, so a dropped D-Bus edge cannot leave the phone's
-> display frozen. Set
+> A paused or absent player costs zero wakeups: D-Bus signals arm the poller
+> on playback and it stops itself on a confirmed pause, so there is no
+> background timer once nothing is playing. Set
 > `poll_while_playing = false` for pure event-driven mode (position then
 > extrapolates from `posAnchorMs` between D-Bus signals).
 
