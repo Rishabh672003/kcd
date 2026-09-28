@@ -111,6 +111,20 @@ The poller has no self-healing timer, so every arm and disarm rides on D-Bus sig
 
 **Contributor invariant: new periodic work must be owner-gated or activity-gated, never standing.** A ticker that fires while nothing is happening is a bug — gate it on owners (discovery), playback state (MPRIS), subscribers (remote refresh), or sightings (reconnect). Do not add a slow self-healing timer to paper over unreliable event delivery: fix the event path instead. An earlier build carried a 10s watchdog that re-armed the poller on missed signals, which cost ~6 D-Bus reads/min on every desktop with a paused media player. It was removed once signal routing was fixed and measured to never fire.
 
+### Known optimization: the position poller's 2s tick
+
+Accepted for now, not because it is required, but because it is cheap and correct. While a player plays, the poller issues one `GetAll` every 2s — measured 2026-09-27 at **28.5 `GetAll`/min, 6 CPU ticks/min (~0.1% of one core)**. Paused and untracked both cost zero.
+
+Seeking is **not** polled. `Seeked` is handled as a free D-Bus signal that updates `pos` directly, so scrubbing costs nothing regardless of this interval. The 2s ticker exists for one reason only: the phone extrapolates from `posAnchorMs`, and that extrapolation needs periodic correction against real metadata and position.
+
+That makes the poll pure drift correction, which is why it is the right next target. Three options, cheapest first:
+
+1. **Owner-gate it on subscribers.** The remote poller already does this — a bus subscriber-change hook starts and stops its ticker. The local poller runs unconditionally even when no client is watching local now-playing. Gating it the same way costs nothing when nobody is looking and changes nothing when someone is. Preferred, because it reuses a pattern already in the codebase rather than introducing a new policy.
+2. **Stretch `position_interval`.** Drift tolerance is already 3s, so extrapolation can cover a wider gap; 2s → 10s drops the rate to ~6/min at the cost of scrubber latency on the phone.
+3. **Stop trusting `GetAll` for `Position`.** Worth verifying what Firefox actually returns there. If it is stale or zero, the code already issues a second `Get` in `queryPositionAndCanSeek` (`state.go`), meaning each tick performs two round-trips to obtain one number. Fixing that halves the rate with no behavioural change.
+
+Any of these should be measured with the same method before and after: `dbus-monitor` call rate for round-trips, `/proc/<pid>/stat` deltas for CPU, and `voluntary_ctxt_switches` to confirm the ticker actually stopped rather than merely slowing down.
+
 ---
 
 ## 2. Transport (`internal/transport`)
