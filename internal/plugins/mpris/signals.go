@@ -9,6 +9,47 @@ import (
 	"github.com/godbus/dbus/v5"
 )
 
+// signalKind identifies which handler owns an incoming D-Bus signal.
+type signalKind int
+
+const (
+	signalKindNone signalKind = iota
+	signalKindNameOwnerChanged
+	signalKindSeeked
+	signalKindPropertiesChanged
+)
+
+func (k signalKind) String() string {
+	switch k {
+	case signalKindNameOwnerChanged:
+		return "NameOwnerChanged"
+	case signalKindSeeked:
+		return "Seeked"
+	case signalKindPropertiesChanged:
+		return "PropertiesChanged"
+	default:
+		return "None"
+	}
+}
+
+// classifySignal routes a signal to its handler.
+//
+// godbus fills Signal.Name as "<interface>.<member>", so these must be fully
+// qualified. Match rules passed to AddMatchSignal use the bare member instead;
+// the two spellings are not interchangeable.
+func classifySignal(name string) signalKind {
+	switch name {
+	case "org.freedesktop.DBus.NameOwnerChanged":
+		return signalKindNameOwnerChanged
+	case "org.mpris.MediaPlayer2.Player.Seeked":
+		return signalKindSeeked
+	case "org.freedesktop.DBus.Properties.PropertiesChanged":
+		return signalKindPropertiesChanged
+	default:
+		return signalKindNone
+	}
+}
+
 func (p *MPRISPlugin) handleNameOwnerChanged(sig *dbus.Signal, conn *dbus.Conn, uniqueToDisplay map[string]string) {
 	if len(sig.Body) < 3 {
 		return

@@ -97,12 +97,12 @@ func (p *MPRISPlugin) runDBusWatcher(ctx context.Context) error {
 				continue
 			}
 
-			switch sig.Name {
-			case "org.freedesktop.DBus.NameOwnerChanged":
+			switch classifySignal(sig.Name) {
+			case signalKindNameOwnerChanged:
 				p.handleNameOwnerChanged(sig, conn, uniqueToDisplay)
-			case "org.mpris.MediaPlayer2.Player.Seeked":
+			case signalKindSeeked:
 				p.handleSeeked(sig, uniqueToDisplay)
-			case "org.freedesktop.DBus.Properties.PropertiesChanged":
+			case signalKindPropertiesChanged:
 				p.handlePropertiesChanged(sig, uniqueToDisplay)
 			}
 		}
