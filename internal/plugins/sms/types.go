@@ -4,9 +4,11 @@ import (
 	"crypto/tls"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/bethropolis/kcd/internal/config"
+	"github.com/bethropolis/kcd/internal/device"
 	"github.com/bethropolis/kcd/internal/events"
 	"github.com/bethropolis/kcd/internal/log"
 	"github.com/bethropolis/kcd/internal/protocol"
@@ -39,6 +41,16 @@ type SMSPlugin struct {
 	tlsConfig     *tls.Config
 	logger        log.Logger
 	cacheDir      string
+
+	// mu guards devices and armedAt.
+	mu sync.RWMutex
+	// devices holds the currently connected devices, keyed by ID, so the
+	// bus hook can arm them without reaching for a registry.
+	devices map[string]device.Sender
+	// armedAt records when each device was last armed, and doubles as the
+	// set of already-armed devices: arming twice on one connection would
+	// re-trigger a full conversation-head burst for no benefit.
+	armedAt map[string]time.Time
 }
 
 // Options customizes storage, network timeouts, and desktop notification identity.
@@ -59,7 +71,7 @@ func NewSMSPlugin(cfg config.SMSConfig, bus *events.Bus, tlsConfig *tls.Config, 
 	}
 	_ = os.MkdirAll(cacheDir, 0700)
 
-	return &SMSPlugin{
+	p := &SMSPlugin{
 		sidechannel:   opts.Sidechannel,
 		notifications: opts.Notifications,
 		cfg:           cfg,
@@ -67,7 +79,17 @@ func NewSMSPlugin(cfg config.SMSConfig, bus *events.Bus, tlsConfig *tls.Config, 
 		tlsConfig:     tlsConfig,
 		logger:        logger.With(log.String("plugin", "sms")),
 		cacheDir:      cacheDir,
+		devices:       make(map[string]device.Sender),
+		armedAt:       make(map[string]time.Time),
 	}
+
+	// Arming is owner-gated: with always_arm off, the phone is only asked
+	// to push while a client is watching sms.incoming.
+	if bus != nil {
+		bus.OnSubscriberChange(p.syncArming)
+	}
+
+	return p
 }
 
 func (p *SMSPlugin) Name() string           { return "SMS" }

@@ -125,6 +125,23 @@ That makes the poll pure drift correction, which is why it is the right next tar
 
 Any of these should be measured with the same method before and after: `dbus-monitor` call rate for round-trips, `/proc/<pid>/stat` deltas for CPU, and `voluntary_ctxt_switches` to confirm the ticker actually stopped rather than merely slowing down.
 
+### SMS push: arming is a one-way door
+
+The phone suppresses every SMS push until the desktop sends `request_conversations` or `request_conversation` once, which sets the plugin's `haveMessagesBeenRequested` flag. **There is no packet that clears it.** A phone that has been armed keeps pushing for the rest of its app's lifetime, whether or not anyone still wants to hear it.
+
+That asymmetry drives the whole design, and it is the part that is easy to get wrong:
+
+- **Arming is gated, not the notifications alone.** `armed()` is true when `[sms] always_arm` is set (the default, matching upstream) or a client subscribes to `sms.incoming`. With `always_arm = false` a bus subscriber-change hook is the opt-in, so the phone is only asked while somebody is actually watching.
+- **The arm time is a second, independent gate.** The reply to `request_conversations` is one `kdeconnect.sms.messages` packet *per thread* carrying that thread's head message, so an ungated notify would fire one desktop popup per existing conversation on every connect. `shouldNotify` drops anything older than the arm time.
+- **Notifications stop when clients do, even though packets do not.** Because the ratchet cannot be undone, a single transient `kcd watch` would otherwise silently become a permanent notifier. The armed check in `shouldNotify` is what makes the residual stream a no-op.
+- **Arming is idempotent per connection.** `watch` reconnects with backoff and re-subscribes each time; without the `armedAt` guard every reconnect would re-trigger a full conversation-head burst.
+- **The arming goroutine must stay off the hook.** `bus.Subscribe` invokes hooks inline, and `dev.Send` can block for up to `writeTimeout` (10s) when a peer's send channel is full, so `syncArming` collects targets under the lock and sends in a goroutine.
+- **A reconnect re-arms**, because that is the only recovery available after the phone's own app restarts and resets the flag. A phone-side restart mid-session is therefore the one case that silently stops push until the connection drops.
+- **The phone emits empty batches.** Its content observer fires on any SMS database change with no empty guard of its own, so `handleMessages` returns early on a zero-length batch.
+- **Message bodies never reach the logger**, only the event bus and the notification text. Journals are routinely collected and shipped off-box, and a message is the most sensitive thing this daemon handles. `TestMessageBodyNeverLogged` guards it.
+
+Known gap, accepted: the phone applies its blocked-numbers list only on the deprecated `kdeconnect.telephony` push, not on the content-observer path, so blocked senders can still arrive over `kdeconnect.sms.messages`.
+
 ---
 
 ## 2. Transport (`internal/transport`)

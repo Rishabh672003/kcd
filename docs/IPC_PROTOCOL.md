@@ -1207,6 +1207,17 @@ An SMS or MMS message was received.
 }
 ```
 
+**Delivery:** the phone pushes these once the daemon has asked for messages,
+which it does per connection when `[sms] always_arm` is set (default) or
+while a client is subscribed to this event type. Subscribing is therefore
+the whole opt-in mechanism — no request command is needed to receive
+messages. The reply to that ask is a one-off burst of per-thread history
+which is published but not notified; `type` 2 marks an outbound message the
+phone echoes back.
+
+Note: `attachments` carries only descriptors. Fetch the bytes with
+`sms_request_attachment`, then read `sms.attachment`.
+
 #### `sms.attachment`
 
 An MMS attachment has been downloaded.

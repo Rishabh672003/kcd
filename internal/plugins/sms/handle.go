@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/bethropolis/kcd/internal/device"
 	"github.com/bethropolis/kcd/internal/events"
@@ -36,9 +37,21 @@ func (p *SMSPlugin) handleMessages(_ context.Context, dev device.Sender, pkt *pr
 		return fmt.Errorf("sms: unmarshal messages batch: %w", err)
 	}
 
+	// The phone's content observer fires on any SMS database change and has
+	// no empty guard of its own, so empty batches are routine once armed.
+	if len(batch.Messages) == 0 {
+		return nil
+	}
+
 	if len(batch.Messages) > maxSMSMessages {
 		return fmt.Errorf("sms: messages batch too large: %d (max %d)", len(batch.Messages), maxSMSMessages)
 	}
+
+	// Resolved once per batch: the arm time and whether we are still
+	// wanted. See shouldNotify for why both matter.
+	armAt, isArmed := p.armedAtFor(dev.ID())
+	armAtMs := armAt.UnixMilli()
+	stillArmed := p.armed()
 
 	for _, msg := range batch.Messages {
 		if msg.Body == "" {
@@ -52,9 +65,10 @@ func (p *SMSPlugin) handleMessages(_ context.Context, dev device.Sender, pkt *pr
 			sender = msg.Addresses[0].Address
 		}
 
+		// Never log the body: journals are routinely collected and shipped
+		// off-box, and a message is the most sensitive thing we handle.
 		p.logger.Debug("sms: message received",
 			log.String("from", sender),
-			log.String("body", msg.Body),
 			log.Int64("thread_id", msg.ThreadID),
 		)
 
@@ -76,7 +90,9 @@ func (p *SMSPlugin) handleMessages(_ context.Context, dev device.Sender, pkt *pr
 			p.bus.Publish(events.TypeSMSIncoming, dev.ID(), payload)
 		}
 
-		if p.cfg.NotifyIncoming {
+		// Type 1 is an inbound message; type 2 is one we sent, and the
+		// phone echoes those back in the same batch.
+		if p.shouldNotify(msg, isArmed && stillArmed, armAtMs) {
 			msgText := msg.Body
 			if len(msgText) > 120 {
 				msgText = msgText[:120] + "…"
@@ -92,4 +108,34 @@ func (p *SMSPlugin) handleMessages(_ context.Context, dev device.Sender, pkt *pr
 	}
 
 	return nil
+}
+
+// shouldNotify decides whether a message deserves a desktop notification.
+//
+// Two independent gates, each closing a different hole. The arm time drops
+// the conversation-head burst the phone sends in reply to the arming
+// request, which is history rather than news. The armed check stops
+// notifications once every client has gone away, which matters because the
+// phone cannot be un-armed: it keeps pushing for the rest of its lifetime,
+// and without this a single transient `kcd watch` would silently turn into
+// a permanent notifier.
+func (p *SMSPlugin) shouldNotify(msg SMSMessage, isArmed bool, armAtMs int64) bool {
+	if !p.cfg.NotifyIncoming || !isArmed {
+		return false
+	}
+	// Type 1 is inbound; type 2 is a message we sent, echoed back in the
+	// same batch.
+	if msg.Type != 1 {
+		return false
+	}
+	return msg.Date >= armAtMs
+}
+
+// armedAtFor returns when the device was armed and whether it is armed at
+// all. Messages older than the arm time are the arming burst, not new SMS.
+func (p *SMSPlugin) armedAtFor(deviceID string) (time.Time, bool) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	t, ok := p.armedAt[deviceID]
+	return t, ok
 }

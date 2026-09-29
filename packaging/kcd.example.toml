@@ -307,6 +307,15 @@ suspend = "systemctl suspend"
 
 [sms]
 # notify_incoming = true       # show a desktop notification on incoming SMS
+# always_arm = true            # ask the phone to push new SMS on every
+                               # connect, so notifications work with no client
+                               # attached (matches upstream KDE Connect).
+                               # Costs one packet per connection, no timers.
+                               # Set false to arm only while a client runs
+                               # `kcd watch --events sms.incoming`.
+                               # Note: the phone applies its blocked-numbers
+                               # list only to the deprecated telephony push,
+                               # so blocked senders can still arrive here.
 
 # ─── Mousepad: remote input settings ─────────────────────────────────────────
 
