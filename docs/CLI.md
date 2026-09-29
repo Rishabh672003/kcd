@@ -1027,9 +1027,38 @@ kcd watch [--events <type,...>] [--json]
 | `sms.attachment` | MMS attachment downloaded: `{filename, path, thread_id}` |
 | `ring.received` | Phone wants this PC to ring |
 
-Event types without a dedicated renderer print as `[<device-id>] <event-type>`;
-use `--json` for their payload. `sms.incoming` is rendered as
-`[<device-id>] sms from <sender>: <body>`.
+Text mode is written for people, not for parsing. Use `--json` if you need the
+raw payload; `kcd watch` lines are not a stable interface.
+
+| Event | Rendered as |
+|---|---|
+| `battery.update` | `battery: 62% (charging: false)` |
+| `battery.threshold` | `battery low: 15%` (` (charging)` only while charging) |
+| `notification` | `notification: WhatsApp - Alice` |
+| `share.progress` | `transfer: a.png... 10/20 bytes` (rewritten in place) |
+| `share.complete` | `transfer complete: a.png` |
+| `mpris.update` | `▶ Firefox - Song (Band)` |
+| `sms.incoming` | `sms from +1555: hello` |
+| `sms.attachment` | `sms attachment saved: photo.jpg` |
+| `ping.received` | `ping: pong` |
+| `connectivity.update` | `connectivity: LTE [███░] (3/4)` |
+| `telephony.ringing` | `incoming call: Bob (+15550001234)` |
+| `telephony.talking` | `call answered: Bob (+15550001234)` |
+| `telephony.missed` | `missed call: Bob (+15550001234)` |
+| `telephony.canceled` | `call ended: Bob (+15550001234)` |
+| `volume.update` | `volume: Speaker 42%` or `volume: Speaker (muted)` |
+| `contacts.updated` | `contacts: 2 added, 1 updated, 5 pending` |
+| `device.added` | `device.added: Pixel 8` |
+| `device.connected` | `device.connected: Pixel 8 (phone)` |
+
+Four types intentionally stay on the bare `[<device-id>] <event-type>` line.
+`ring.received`, `device.removed` and `device.disconnected` carry no payload to
+show, and `state.snapshot` carries a full device and plugin dump that would
+flood the terminal.
+
+Long values (message bodies, contact names, file names) are truncated with an
+ellipsis and collapsed onto one line, so a multi-line SMS cannot break the
+one-event-per-line shape.
 
 ### Examples
 
@@ -1042,7 +1071,11 @@ kcd watch
 ```
 [a1b2...] battery: 62% (charging: false)
 [a1b2...] notification: WhatsApp - Alice: "Hey, are you free?"
-[a1b2...] telephony.ringing — Bob (+15550001234)
+[a1b2...] incoming call: Bob (+15550001234)
+[a1b2...] connectivity: LTE [███░] (3/4)
+[a1b2...] volume: Speaker 42%
+[a1b2...] sms from +15550001234: Running about 10 minutes late
+[a1b2...] contacts: 2 added, 1 updated, 5 pending
 ```
 
 **Filter to battery and calls only**

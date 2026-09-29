@@ -777,6 +777,12 @@ Usage: `python3 monitor.py '["battery.update","mpris.update"]'`
 
 ### 9.3 GTK4/Shell Proxy
 
+The plain-text output of `kcd watch` is formatted for people, not for parsing:
+long values are truncated, zero counts are dropped, and the wording is prose
+("incoming call", "battery low"). It is not a stable interface. Anything that
+needs the full payload should use `--json`, whose event stream is the
+documented contract in [`IPC_PROTOCOL.md §5`](IPC_PROTOCOL.md#5-event-types).
+
 For desktop shell widgets (eww, ags, quickshell), run `kcd watch` in the
 background and pipe the JSON output to a named pipe or parse it directly:
 
@@ -786,6 +792,14 @@ kcd watch --json '["battery.update","mpris.update"]' | while read -r line; do
     [ "$line" = '{"ok":true}' ] && continue
     # Parse and update widget state
 done
+```
+
+To read events by eye instead:
+
+```bash
+kcd watch                     # everything, rendered for a terminal
+kcd watch --events=sms.incoming
+kcd watch --events=connectivity.update
 ```
 
 ---

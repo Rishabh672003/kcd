@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -57,71 +56,7 @@ var watchCmd = &cli.Command{
 					b, _ := json.Marshal(ev)
 					fmt.Println(string(b))
 				} else {
-					switch ev.Type {
-					case events.TypeBatteryUpdate:
-						payload, _ := ev.Payload.(map[string]interface{})
-						fmt.Printf("[%s] battery: %v%% (charging: %v)\n", ev.DeviceID, payload["charge"], payload["charging"])
-					case events.TypeNotification:
-						payload, _ := ev.Payload.(map[string]interface{})
-						fmt.Printf("[%s] notification: %s - %s\n", ev.DeviceID, payload["appName"], payload["title"])
-					case events.TypeShareProgress:
-						payload, _ := ev.Payload.(map[string]interface{})
-						fmt.Printf("\r[%s] transfer: %s... %v/%v bytes", ev.DeviceID, payload["file"], payload["current"], payload["total"])
-					case events.TypeShareComplete:
-						payload, _ := ev.Payload.(map[string]interface{})
-						fmt.Printf("\n[%s] transfer complete: %s\n", ev.DeviceID, payload["file"])
-					case events.TypeShareText:
-						payload, _ := ev.Payload.(map[string]interface{})
-						fmt.Printf("[%s] share text: %s\n", ev.DeviceID, payload["text"])
-					case events.TypeShareURL:
-						payload, _ := ev.Payload.(map[string]interface{})
-						fmt.Printf("[%s] share url: %s\n", ev.DeviceID, payload["url"])
-					case events.TypeSftpMount:
-						payload, _ := ev.Payload.(map[string]interface{})
-						fmt.Printf("[%s] SFTP credentials received: %s\n", ev.DeviceID, payload["uri"])
-					case events.TypePairRequested:
-						payload, _ := ev.Payload.(map[string]interface{})
-						fmt.Printf("[%s] pair request from %s (%s). code: %v\n", ev.DeviceID, payload["name"], payload["type"], payload["verificationKey"])
-					case events.TypePairAccepted:
-						payload, _ := ev.Payload.(map[string]interface{})
-						fmt.Printf("[%s] paired with %s\n", ev.DeviceID, payload["name"])
-					case events.TypePairRejected:
-						payload, _ := ev.Payload.(map[string]interface{})
-						fmt.Printf("[%s] pairing rejected or cancelled by %s\n", ev.DeviceID, payload["name"])
-					case events.TypeNotificationCanceled:
-						payload, _ := ev.Payload.(map[string]interface{})
-						fmt.Printf("[%s] notification cancelled: %s\n", ev.DeviceID, payload["id"])
-					case events.TypeMprisUpdate:
-						payload, _ := ev.Payload.(map[string]interface{})
-						state := "⏹"
-						if isPlaying, _ := payload["isPlaying"].(bool); isPlaying {
-							state = "▶"
-						} else if ps, _ := payload["playbackStatus"].(string); ps == "Paused" {
-							state = "⏸"
-						}
-						player, _ := payload["player"].(string)
-						title, _ := payload["title"].(string)
-						artist, _ := payload["artist"].(string)
-						fmt.Printf("[%s] %s %s", ev.DeviceID, state, player)
-						if title != "" {
-							fmt.Printf(" - %s", title)
-						}
-						if artist != "" {
-							fmt.Printf(" (%s)", artist)
-						}
-						fmt.Println()
-					case events.TypeSMSIncoming:
-						payload, _ := ev.Payload.(map[string]interface{})
-						sender, _ := payload["sender"].(string)
-						body, _ := payload["body"].(string)
-						if len(body) > 72 {
-							body = body[:71] + "…"
-						}
-						oneLine := strings.Join(strings.Fields(body), " ")
-						fmt.Printf("[%s] sms from %s: %s\n", ev.DeviceID, sender, oneLine)
-					default:
-						fmt.Printf("[%s] %s\n", ev.DeviceID, ev.Type)
-					}
+					fmt.Print(formatEvent(ev))
 				}
 			}
 		}()
