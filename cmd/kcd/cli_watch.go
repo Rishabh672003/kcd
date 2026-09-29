@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -109,6 +110,15 @@ var watchCmd = &cli.Command{
 							fmt.Printf(" (%s)", artist)
 						}
 						fmt.Println()
+					case events.TypeSMSIncoming:
+						payload, _ := ev.Payload.(map[string]interface{})
+						sender, _ := payload["sender"].(string)
+						body, _ := payload["body"].(string)
+						if len(body) > 72 {
+							body = body[:71] + "…"
+						}
+						oneLine := strings.Join(strings.Fields(body), " ")
+						fmt.Printf("[%s] sms from %s: %s\n", ev.DeviceID, sender, oneLine)
 					default:
 						fmt.Printf("[%s] %s\n", ev.DeviceID, ev.Type)
 					}

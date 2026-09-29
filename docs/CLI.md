@@ -1027,6 +1027,10 @@ kcd watch [--events <type,...>] [--json]
 | `sms.attachment` | MMS attachment downloaded: `{filename, path, thread_id}` |
 | `ring.received` | Phone wants this PC to ring |
 
+Event types without a dedicated renderer print as `[<device-id>] <event-type>`;
+use `--json` for their payload. `sms.incoming` is rendered as
+`[<device-id>] sms from <sender>: <body>`.
+
 ### Examples
 
 **Watch everything, human-readable**
@@ -1046,6 +1050,21 @@ kcd watch
 ```bash
 kcd watch --events=battery.update,telephony.ringing
 ```
+
+**Receive SMS as they arrive**
+
+```bash
+kcd watch --events=sms.incoming
+```
+
+```
+[a1b2...] sms from +15550001234: Running about 10 minutes late, order without me
+[a1b2...] sms from +15550009999: Your code is 481920. Do not share it.
+```
+
+The phone pushes messages as they arrive, so this needs no polling and no
+request command. With `[sms] always_arm = false` the subscription is also what
+arms the push, so nothing is asked of the phone until this command is running.
 
 **Raw NDJSON for scripting**
 
