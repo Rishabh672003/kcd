@@ -15,36 +15,72 @@ func TestFormatConnectivity(t *testing.T) {
 		{
 			name: "empty",
 			body: connectivity.ConnectivityBody{},
-			want: []string{"No signal data reported"},
+			want: []string{"No SIM or cellular data available"},
 		},
 		{
 			name: "single sim detailed type",
 			body: connectivity.ConnectivityBody{SignalStrengths: map[string]connectivity.SignalStrength{
 				"0": {NetworkType: "LTE", NetworkDetailedType: "LTE", SignalStrength: 3},
 			}},
-			want: []string{"LTE [███░] (3/4)"},
+			want: []string{"SIM 0: LTE      ●●●○"},
 		},
 		{
 			name: "falls back to network type",
 			body: connectivity.ConnectivityBody{SignalStrengths: map[string]connectivity.SignalStrength{
 				"0": {NetworkType: "5G", SignalStrength: 4},
 			}},
-			want: []string{"5G [████] (4/4)"},
+			want: []string{"SIM 0: 5G       ●●●●"},
 		},
 		{
-			name: "clamps out of range",
+			name: "clamps above range to a full bar",
 			body: connectivity.ConnectivityBody{SignalStrengths: map[string]connectivity.SignalStrength{
 				"0": {NetworkType: "GSM", SignalStrength: 9},
 			}},
-			want: []string{"GSM [████] (4/4)"},
+			want: []string{"SIM 0: GSM      ●●●●"},
 		},
 		{
-			name: "dual sim primary first",
+			name: "clamps below range reads as no service",
+			body: connectivity.ConnectivityBody{SignalStrengths: map[string]connectivity.SignalStrength{
+				"0": {NetworkType: "GSM", SignalStrength: -2},
+			}},
+			want: []string{"SIM 0: No service"},
+		},
+		{
+			name: "zero level is no service, not an empty bar",
+			body: connectivity.ConnectivityBody{SignalStrengths: map[string]connectivity.SignalStrength{
+				"0": {NetworkType: "LTE", SignalStrength: 0},
+			}},
+			want: []string{"SIM 0: No service"},
+		},
+		{
+			name: "unknown network type reads as cellular",
+			body: connectivity.ConnectivityBody{SignalStrengths: map[string]connectivity.SignalStrength{
+				"0": {NetworkType: "unknown", SignalStrength: 2},
+			}},
+			want: []string{"SIM 0: Cellular ●●○○"},
+		},
+		{
+			name: "empty network type reads as cellular",
+			body: connectivity.ConnectivityBody{SignalStrengths: map[string]connectivity.SignalStrength{
+				"0": {SignalStrength: 1},
+			}},
+			want: []string{"SIM 0: Cellular ●○○○"},
+		},
+		{
+			name: "dual sim primary first and labels stay aligned",
 			body: connectivity.ConnectivityBody{SignalStrengths: map[string]connectivity.SignalStrength{
 				"1": {NetworkType: "EDGE", SignalStrength: 2},
 				"0": {NetworkType: "LTE", SignalStrength: 4},
 			}},
-			want: []string{"SIM 0: LTE [████] (4/4)", "SIM 1: EDGE [██░░] (2/4)"},
+			want: []string{"SIM 0: LTE      ●●●●", "SIM 1: EDGE     ●●○○"},
+		},
+		{
+			name: "sparse subscription ids are not renumbered",
+			body: connectivity.ConnectivityBody{SignalStrengths: map[string]connectivity.SignalStrength{
+				"3": {NetworkType: "NR", SignalStrength: 3},
+				"7": {NetworkType: "LTE", SignalStrength: 1},
+			}},
+			want: []string{"SIM 3: NR       ●●●○", "SIM 7: LTE      ●○○○"},
 		},
 	}
 	for _, tc := range cases {

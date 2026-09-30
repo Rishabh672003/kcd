@@ -357,10 +357,14 @@ If `device-id` is omitted, `kcd` automatically targets the first paired and conn
 **Example output**
 
 ```
-LTE [███░] (3/4)
+SIM 0: LTE      ●●●○
 ```
 
-Dual-SIM phones print one line per SIM (`SIM 0: …`), primary first.
+Dual-SIM phones print one line per SIM (`SIM 0: …`, `SIM 1: …`), primary first.
+The network label is padded to eight columns so the dot bars line up. A SIM
+that is registered but has no usable signal reads `No service` rather than
+showing an empty bar, and an `unknown` or absent network type reads `Cellular`.
+
 `--json` prints the raw report (same shape as `connectivity.update` event
 payloads) for scripting. Exits non-zero with `no connectivity data` when
 the device is offline or never reported — reports are requested fresh on
@@ -1041,7 +1045,7 @@ raw payload; `kcd watch` lines are not a stable interface.
 | `sms.incoming` | `sms from +1555: hello` |
 | `sms.attachment` | `sms attachment saved: photo.jpg` |
 | `ping.received` | `ping: pong` |
-| `connectivity.update` | `connectivity: LTE [███░] (3/4)` |
+| `connectivity.update` | `connectivity: SIM 0: LTE      ●●●○` |
 | `telephony.ringing` | `incoming call: Bob (+15550001234)` |
 | `telephony.talking` | `call answered: Bob (+15550001234)` |
 | `telephony.missed` | `missed call: Bob (+15550001234)` |
@@ -1072,7 +1076,7 @@ kcd watch
 [a1b2...] battery: 62% (charging: false)
 [a1b2...] notification: WhatsApp - Alice: "Hey, are you free?"
 [a1b2...] incoming call: Bob (+15550001234)
-[a1b2...] connectivity: LTE [███░] (3/4)
+[a1b2...] connectivity: SIM 0: LTE      ●●●○
 [a1b2...] volume: Speaker 42%
 [a1b2...] sms from +15550001234: Running about 10 minutes late
 [a1b2...] contacts: 2 added, 1 updated, 5 pending

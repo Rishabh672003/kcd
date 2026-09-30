@@ -208,7 +208,7 @@ func TestFormatEventNewTypes(t *testing.T) {
 					"0": map[string]any{"networkType": "LTE", "signalStrength": 3},
 				},
 			}},
-			want: "[d1] connectivity: LTE [███░] (3/4)\n",
+			want: "[d1] connectivity: SIM 0: LTE      ●●●○\n",
 		},
 		{
 			name: "device added keeps type token first",
