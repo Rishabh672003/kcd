@@ -206,17 +206,17 @@ A `Device` wraps an active TCP connection with:
 ```mermaid
 stateDiagram-v2
     direction TB
-    
+
     [*] --> Unpaired
-    
+
     Unpaired --> PairRequested : Local initiates
     PairRequested --> Paired : Peer accepts
     PairRequested --> Unpaired : Peer rejects / timeout
-    
+
     Unpaired --> PairRequestedByPeer : Peer initiates
     PairRequestedByPeer --> Paired : Local accepts
     PairRequestedByPeer --> Unpaired : Local rejects
-    
+
     Paired --> Unpaired : Unpair
 ```
 

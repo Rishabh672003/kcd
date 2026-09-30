@@ -4,7 +4,7 @@ set -e
 # Package pre-remove hook for kcd
 
 # Try to stop and disable all instances of the kcd template service
-# that might be running. 
+# that might be running.
 if command -v systemctl >/dev/null 2>&1; then
     echo "Stopping any running kcd services..."
     # System-level kcd services (template or plain)
