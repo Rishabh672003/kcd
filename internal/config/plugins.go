@@ -99,6 +99,10 @@ type MousepadConfig struct {
 type SMSConfig struct {
 	// NotifyIncoming shows a desktop notification when an SMS is received.
 	NotifyIncoming bool `toml:"notify_incoming"`
+
+	// AlwaysArm asks the phone to push new SMS on every connect. The phone
+	// cannot be un-asked, so this is opt-in; see internal/plugins/sms.
+	AlwaysArm bool `toml:"always_arm"`
 }
 
 func (p *PluginConfig) Defaults() {
@@ -186,4 +190,5 @@ func (c *MousepadConfig) Defaults() {
 
 func (c *SMSConfig) Defaults() {
 	c.NotifyIncoming = true
+	c.AlwaysArm = false
 }

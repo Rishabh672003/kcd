@@ -83,11 +83,13 @@ func connectivityEqual(a, b ConnectivityBody) bool {
 	return true
 }
 
-func (p *ConnectivityPlugin) OnConnect(dev device.Sender) {
-	// Request an immediate connectivity report upon connection
-	pkt, _ := protocol.NewPacket("kdeconnect.connectivity_report.request", map[string]interface{}{})
-	dev.Send(pkt)
-}
+// OnConnect intentionally sends nothing. The phone's ConnectivityReportPlugin
+// declares supportedPacketTypes = emptyArray() and its onPacketReceived returns
+// false unconditionally, so kdeconnect.connectivity_report.request can never be
+// processed on Android. It pushes reports on its own whenever its telephony
+// state listener fires, so the only thing a connect-time request accomplished
+// was a discarded packet.
+func (p *ConnectivityPlugin) OnConnect(_ device.Sender) {}
 
 // Report returns the last connectivity report received from a device.
 // The second return value is false when the device never reported (or the

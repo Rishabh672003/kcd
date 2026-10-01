@@ -51,19 +51,42 @@ var connectivityCmd = &cli.Command{
 	},
 }
 
-// formatConnectivity renders one line per SIM, e.g. "LTE [███░] (3/4)".
-// The primary SIM ("0", else lowest key) comes first; keys are sorted for
-// stable output. Level is clamped to 0-4 so the bar always parses.
+// signalDots renders signal level 0-4 as a four-position dot bar. The range is
+// clamped so a bogus level from the phone still produces a parseable bar, and
+// four positions means the maximum level reads as genuinely full.
+// These are text-presentation geometric shapes (single cell width), not
+// pictographs, so they align like the block-element bar they replace.
+func signalDots(level int) string {
+	if level < 0 {
+		level = 0
+	}
+	if level > 4 {
+		level = 4
+	}
+	dots := []string{"○○○○", "●○○○", "●●○○", "●●●○", "●●●●"}
+	return dots[level]
+}
+
+func formatSIMStatus(networkType string, level int) string {
+	if level <= 0 {
+		return "No service"
+	}
+	label := networkType
+	if label == "" || strings.EqualFold(label, "unknown") {
+		label = "Cellular"
+	}
+	return fmt.Sprintf("%-8s %s", label, signalDots(level))
+}
+
 func formatConnectivity(body connectivity.ConnectivityBody) []string {
 	if len(body.SignalStrengths) == 0 {
-		return []string{"No signal data reported"}
+		return []string{"No SIM or cellular data available"}
 	}
 	keys := make([]string, 0, len(body.SignalStrengths))
 	for k := range body.SignalStrengths {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
-	// Primary SIM first.
 	if _, ok := body.SignalStrengths["0"]; ok {
 		ordered := []string{"0"}
 		for _, k := range keys {
@@ -77,26 +100,11 @@ func formatConnectivity(body connectivity.ConnectivityBody) []string {
 	lines := make([]string, 0, len(keys))
 	for _, k := range keys {
 		sig := body.SignalStrengths[k]
-		level := sig.SignalStrength
-		if level < 0 {
-			level = 0
-		}
-		if level > 4 {
-			level = 4
-		}
 		netType := sig.NetworkDetailedType
 		if netType == "" {
 			netType = sig.NetworkType
 		}
-		if netType == "" {
-			netType = "CELL"
-		}
-		bar := strings.Repeat("█", level) + strings.Repeat("░", 4-level)
-		if len(keys) == 1 {
-			lines = append(lines, fmt.Sprintf("%s [%s] (%d/4)", strings.ToUpper(netType), bar, level))
-		} else {
-			lines = append(lines, fmt.Sprintf("SIM %s: %s [%s] (%d/4)", k, strings.ToUpper(netType), bar, level))
-		}
+		lines = append(lines, fmt.Sprintf("SIM %s: %s", k, formatSIMStatus(netType, sig.SignalStrength)))
 	}
 	return lines
 }

@@ -290,6 +290,16 @@ except KeyboardInterrupt:
 | `share.complete` | File transfer finished |
 | `mpris.update` | Now-playing state changed (deduplicated — only on real changes) |
 | `sms.incoming` | SMS/MMS received |
+
+> **SMS freshness:** the phone only pushes new messages after the daemon
+> has asked once, which by default happens only while a client subscribes to
+> `sms.incoming` — so `kcd watch --events sms.incoming` is all it takes to
+> receive messages live. Set `[sms] always_arm = true` to ask on every
+> connect instead and notify with no client attached. The phone cannot be un-asked,
+> so a client that subscribes leaves the phone pushing afterwards; the
+> daemon keeps publishing events in that case but stays quiet on desktop
+> notifications. Messages that predate the ask arrive as a one-off burst of
+> per-thread history and are not notified.
 | `contacts.updated` | Contacts sync progress (counts only; call `contacts_list` for data) |
 | `pair.requested` | Remote device wants to pair |
 | `ping.received` | Ping from device |
@@ -324,11 +334,9 @@ except KeyboardInterrupt:
 > stays silent — the phone extrapolates from `posAnchorMs` — and a tick
 > re-broadcasts only on a metadata change or when the true position drifts
 > more than 3s off the extrapolation (seek, missed signal, clock drift).
-> With no player running at all, nothing is polled — a silent desktop costs
-> zero wakeups. While a player is merely paused, a 10s watchdog re-checks
-> live state and restarts the poller if playback resumed without the daemon
-> seeing the signal, so a dropped D-Bus edge cannot leave the phone's
-> display frozen. Set
+> A paused or absent player costs zero wakeups: D-Bus signals arm the poller
+> on playback and it stops itself on a confirmed pause, so there is no
+> background timer once nothing is playing. Set
 > `poll_while_playing = false` for pure event-driven mode (position then
 > extrapolates from `posAnchorMs` between D-Bus signals).
 
@@ -769,6 +777,12 @@ Usage: `python3 monitor.py '["battery.update","mpris.update"]'`
 
 ### 9.3 GTK4/Shell Proxy
 
+The plain-text output of `kcd watch` is formatted for people, not for parsing:
+long values are truncated, zero counts are dropped, and the wording is prose
+("incoming call", "battery low"). It is not a stable interface. Anything that
+needs the full payload should use `--json`, whose event stream is the
+documented contract in [`IPC_PROTOCOL.md §5`](IPC_PROTOCOL.md#5-event-types).
+
 For desktop shell widgets (eww, ags, quickshell), run `kcd watch` in the
 background and pipe the JSON output to a named pipe or parse it directly:
 
@@ -778,6 +792,14 @@ kcd watch --json '["battery.update","mpris.update"]' | while read -r line; do
     [ "$line" = '{"ok":true}' ] && continue
     # Parse and update widget state
 done
+```
+
+To read events by eye instead:
+
+```bash
+kcd watch                     # everything, rendered for a terminal
+kcd watch --events=sms.incoming
+kcd watch --events=connectivity.update
 ```
 
 ---

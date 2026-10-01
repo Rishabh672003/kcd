@@ -1,0 +1,8 @@
+[tools]
+hk = "latest"
+# Pinned to match .github/workflows/ci.yml (golangci-lint-action v9, v2.11).
+# Bump both together; a local version ahead of CI means local checks can pass
+# while CI fails.
+golangci-lint = "2.11"
+# go.mod declares go 1.25.0 and CI uses go-version-file, so track that.
+go = "1.25"

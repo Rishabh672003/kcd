@@ -4,13 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os/exec"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/bethropolis/kcd/internal/device"
 	"github.com/bethropolis/kcd/internal/log"
-	"github.com/bethropolis/kcd/internal/plugin"
 	"github.com/bethropolis/kcd/internal/protocol"
 )
 
@@ -22,8 +22,16 @@ type RunCommandPlugin struct {
 	// pendingLists holds one buffered waiter per device awaiting that
 	// device's command-list reply, keyed by device ID.
 	pendingLists map[string]chan []Command
-	logger       log.Logger
-	wg           sync.WaitGroup // exported for tests to synchronize with background goroutines
+	// running holds the cancel func of every live execution, keyed by device
+	// ID then execution id, so the phone's stop button can reach it. Entries
+	// are removed when the execution finishes.
+	running map[string]map[int32]context.CancelFunc
+	// execSeq hands out execution ids. It is a counter rather than a
+	// timestamp because the phone reads the id with getInt, which would
+	// overflow on a nanosecond value.
+	execSeq int32
+	logger  log.Logger
+	wg      sync.WaitGroup // exported for tests to synchronize with background goroutines
 }
 
 func NewRunCommandPlugin(commands map[string]string, commandsPerDevice map[string]map[string]string, logger log.Logger) *RunCommandPlugin {
@@ -34,6 +42,7 @@ func NewRunCommandPlugin(commands map[string]string, commandsPerDevice map[strin
 		Commands:          commands,
 		CommandsPerDevice: commandsPerDevice,
 		pendingLists:      make(map[string]chan []Command),
+		running:           make(map[string]map[int32]context.CancelFunc),
 		logger:            logger.With(log.String("plugin", "runcommand")),
 	}
 }
@@ -42,6 +51,10 @@ func NewRunCommandPlugin(commands map[string]string, commandsPerDevice map[strin
 type RequestBody struct {
 	RequestCommandList bool   `json:"requestCommandList,omitempty"`
 	Key                string `json:"key,omitempty"`
+	// Stop cancels a running execution. The phone's stop button sends this
+	// with the execution id.
+	Stop bool  `json:"stop,omitempty"`
+	ID   int32 `json:"id,omitempty"`
 }
 
 // Name returns the plugin name.
@@ -57,9 +70,11 @@ func (p *RunCommandPlugin) IncomingTypes() []string {
 	return []string{"kdeconnect.runcommand.request", "kdeconnect.runcommand"}
 }
 
-// OutgoingTypes returns the packet types this plugin may send.
+// OutgoingTypes returns the packet types this plugin may send. The output type
+// is what tells the phone it can render results in its in-app output card
+// rather than relying on a notification it ignores by default.
 func (p *RunCommandPlugin) OutgoingTypes() []string {
-	return []string{"kdeconnect.runcommand", "kdeconnect.notification"}
+	return []string{"kdeconnect.runcommand", PacketTypeOutput, "kdeconnect.notification"}
 }
 
 // Handle processes incoming command requests.
@@ -72,6 +87,12 @@ func (p *RunCommandPlugin) Handle(ctx context.Context, dev device.Sender, pkt *p
 	var body RequestBody
 	if err := json.Unmarshal(pkt.Body, &body); err != nil {
 		return err
+	}
+
+	// The phone's stop button sends {"stop": true} with the execution id.
+	if body.Stop {
+		p.stopRunning(dev.ID(), body.ID)
+		return nil
 	}
 
 	if body.RequestCommandList {
@@ -120,26 +141,37 @@ func (p *RunCommandPlugin) Handle(ctx context.Context, dev device.Sender, pkt *p
 			return nil
 		}
 
-		// Handlers must not block. Spawning goroutine to run the command
-		// and optionally send a notification with the output.
+		// Handlers must not block. Spawning goroutine to run the command,
+		// stream its output to the phone's output card, and fall back to a
+		// notification for users who have not enabled the output card.
+		execID := p.nextExecID()
 		p.wg.Add(1)
 		go func() {
 			defer p.wg.Done()
 			execCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
 
-			out, err := plugin.RunCommandSync(execCtx, "sh", "-c", cmdStr)
+			p.Mu.Lock()
+			if p.running[dev.ID()] == nil {
+				p.running[dev.ID()] = make(map[int32]context.CancelFunc)
+			}
+			p.running[dev.ID()][execID] = cancel
+			p.Mu.Unlock()
 
-			text := strings.TrimSpace(string(out))
+			// Registered before the command starts so the phone's stop
+			// button can reach an execution that has just been launched.
+			if err := p.sendStarted(dev, execID, body.Key); err != nil {
+				p.logger.Warn("failed to send command started", log.Error(err))
+			}
+
+			cmd := exec.CommandContext(execCtx, "sh", "-c", cmdStr)
+			text := p.streamOutput(execCtx, dev, execID, body.Key, cmd)
+
+			// Keep the notification path: it is the only channel for anyone
+			// who has not enabled the phone's in-app output card.
+			text = strings.TrimSpace(text)
 			if len(text) == 0 {
-				if err != nil {
-					text = fmt.Sprintf("Error: %v", err)
-				} else {
-					// No output and no error — do not send a notification.
-					return
-				}
-			} else if err != nil {
-				text = fmt.Sprintf("Error: %v\n\n%s", err, text)
+				return
 			}
 
 			// Do not send notifications for massive outputs (e.g. log dumps)
@@ -151,8 +183,6 @@ func (p *RunCommandPlugin) Handle(ctx context.Context, dev device.Sender, pkt *p
 			// Send notification back to the phone.
 			// The Android app uses 'appName' as the title and 'ticker' as the body.
 			// It ignores 'title' and 'text'.
-			// Note: the Android ReceiveNotificationsPlugin is disabled by default.
-			// Users must enable "Receive notifications" in the device's plugin settings.
 			notifBody := map[string]interface{}{
 				"id":      fmt.Sprintf("%d", time.Now().UnixNano()),
 				"appName": fmt.Sprintf("Run: %s", body.Key),
@@ -177,7 +207,24 @@ func (p *RunCommandPlugin) Handle(ctx context.Context, dev device.Sender, pkt *p
 	return nil
 }
 
+// sendStarted announces a beginning execution. The phone registers the id
+// against a display row here, so it must precede any output for that id.
+func (p *RunCommandPlugin) sendStarted(dev device.Sender, id int32, command string) error {
+	pkt, err := protocol.NewPacket(PacketTypeOutput, map[string]any{
+		"commandStarted": true,
+		"id":             id,
+		"command":        command,
+	})
+	if err != nil {
+		return err
+	}
+	return dev.Send(pkt)
+}
+
 func (p *RunCommandPlugin) OnConnect(dev device.Sender) {}
 
+// OnDisconnect cancels anything still running for the device, so a command
+// does not outlive the connection that asked for it.
 func (p *RunCommandPlugin) OnDisconnect(dev device.Sender) {
+	p.stopAll(dev.ID())
 }

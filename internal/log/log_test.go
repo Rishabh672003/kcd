@@ -77,3 +77,20 @@ func TestSetLevelFilters(t *testing.T) {
 		t.Errorf("surviving entry = %q, want %q", got, "kept")
 	}
 }
+
+func TestObserveCapturesFieldsAndLevels(t *testing.T) {
+	l, snapshot := Observe()
+	l.Debug("d", String("body", "secret"))
+	l.Info("i", Int("n", 7))
+
+	entries := snapshot()
+	if len(entries) != 2 {
+		t.Fatalf("captured %d entries, want 2: %v", len(entries), entries)
+	}
+	if !strings.Contains(entries[0], "body=secret") {
+		t.Errorf("entry missing field: %q", entries[0])
+	}
+	if !strings.Contains(entries[1], "n=7") {
+		t.Errorf("entry missing field: %q", entries[1])
+	}
+}

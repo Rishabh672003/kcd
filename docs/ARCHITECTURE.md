@@ -91,23 +91,56 @@ Connected steady state (all pairs connected, nothing playing, no transfers, no p
 | mDNS browse | Same owned lifetime as broadcast (probes are periodic by library design) |
 | mDNS advertise | Lifetime-on, responder-only (no timers) |
 | UDP/TCP/IPC listeners, D-Bus signals, bus subscriptions | Blocking waits, zero CPU until an event arrives |
-| Local position poller | Exists only while ≥1 local player `IsPlaying` (`[mpris] poll_while_playing`, `position_interval`); ticks re-broadcast only on metadata change or position drift >3s off the anchor extrapolation |
-| MPRIS watchdog | 10s re-check, alive only while ≥1 local player is tracked; restarts the position poller if it finds unpolled playback (see below) |
+| Local position poller | Exists only while ≥1 local player `IsPlaying` (`[mpris] poll_while_playing`, `position_interval`); armed by D-Bus signals, ticks re-broadcast only on metadata change or position drift >3s off the anchor extrapolation |
 | Remote state poller | Ticker itself exists only while a client subscribes to `mpris.update` (bus subscriber-change hook starts/stops it) |
 | Reconnect redial | Parked on discovery sightings; fallback escalates to `fallback_max`, then gives up past `stale_after` until the next sighting |
 | TCP keepalive | Kernel probes, first delay `[network] keepalive_idle` (default 30s, minimum 10s) |
 
-### The one deliberate exception: the MPRIS watchdog
-
-The position poller arms on an observed state change and stops as soon as a live read confirms nothing is playing. Restarting it therefore depends on a D-Bus `PlaybackStatus` signal arriving — and a missed signal strands the poller for the rest of the session, leaving the phone's now-playing frozen while audio plays. Firefox's MPRIS endpoint answers intermittently, so a dropped edge is routine rather than a corner case.
-
-So while any local player is tracked, a 10s watchdog samples live state and re-arms the poller if it finds unpolled playback. This bounds the stale window regardless of signal reliability.
-
-The cost: with an MPRIS application open but paused, the daemon performs one D-Bus read per 10s. **"Zero timers at idle" means zero when no MPRIS player is tracked**, not zero on a desktop with a media player merely running. This is a deliberate trade — a bounded ~6 reads/min beats an unbounded frozen now-playing display.
+There are no standing timers. The position poller is armed by D-Bus signals and self-stops on a confirmed pause, so a tracked-but-paused player costs zero wakeups — exactly like an untracked one.
 
 Measured 2026-09-25 (phone connected, Firefox playing): 7.5 CPU ticks/min, 0 voluntary context switches. Idle with no MPRIS player tracked: 0.00 CPU ticks/min, 0 `GetAll`/min. Methodology note: Go timers are runtime-managed (no timerfds to count) and `ptrace` is restricted by Yama, so `/proc` CPU deltas + `dbus-monitor` call rates are the working proxies.
 
-**Contributor invariant: new periodic work must be owner-gated or activity-gated, never standing.** A ticker that fires while nothing is happening is a bug — gate it on owners (discovery), playback state (MPRIS), subscribers (remote refresh), or sightings (reconnect). Where a signal-driven design cannot be made reliable, add a slow self-healing check scoped to the thing it watches, and document it here as a known cost rather than quietly reintroducing a standing timer.
+### The signal path is load-bearing
+
+The poller has no self-healing timer, so every arm and disarm rides on D-Bus signal delivery. Two details are easy to get wrong and both have already caused a total outage:
+
+- **godbus reports `Signal.Name` as `<interface>.<member>`, not the bare member.** Dispatch compares the fully qualified name (`org.mpris.MediaPlayer2.Player.Seeked`); match rules passed to `AddMatchSignal` use the bare member (`Seeked`). The two spellings are not interchangeable, and matching the wrong one silently drops every signal with no error anywhere.
+- **Match rules use `WithMatchInterface` + `WithMatchMember`, never the unfiltered rule.** The fully qualified name is not a legal value for `WithMatchMember`, and the daemon closes with an invalid-argument error, which surfaces as a crash-looping watcher rather than a dropped signal.
+
+`classifySignal` in `internal/plugins/mpris/signals.go` is the single place that maps a signal name to a handler, and it is table-tested against both the qualified and the bare spellings. Keep it that way; a `switch` inline in the watcher loop cannot be unit-tested and that is precisely how the bare-name bug survived so long.
+
+**Contributor invariant: new periodic work must be owner-gated or activity-gated, never standing.** A ticker that fires while nothing is happening is a bug — gate it on owners (discovery), playback state (MPRIS), subscribers (remote refresh), or sightings (reconnect). Do not add a slow self-healing timer to paper over unreliable event delivery: fix the event path instead. An earlier build carried a 10s watchdog that re-armed the poller on missed signals, which cost ~6 D-Bus reads/min on every desktop with a paused media player. It was removed once signal routing was fixed and measured to never fire.
+
+### Known optimization: the position poller's 2s tick
+
+Accepted for now, not because it is required, but because it is cheap and correct. While a player plays, the poller issues one `GetAll` every 2s — measured 2026-09-27 at **28.5 `GetAll`/min, 6 CPU ticks/min (~0.1% of one core)**. Paused and untracked both cost zero.
+
+Seeking is **not** polled. `Seeked` is handled as a free D-Bus signal that updates `pos` directly, so scrubbing costs nothing regardless of this interval. The 2s ticker exists for one reason only: the phone extrapolates from `posAnchorMs`, and that extrapolation needs periodic correction against real metadata and position.
+
+That makes the poll pure drift correction, which is why it is the right next target. Three options, cheapest first:
+
+1. **Owner-gate it on subscribers.** The remote poller already does this — a bus subscriber-change hook starts and stops its ticker. The local poller runs unconditionally even when no client is watching local now-playing. Gating it the same way costs nothing when nobody is looking and changes nothing when someone is. Preferred, because it reuses a pattern already in the codebase rather than introducing a new policy.
+2. **Stretch `position_interval`.** Drift tolerance is already 3s, so extrapolation can cover a wider gap; 2s → 10s drops the rate to ~6/min at the cost of scrubber latency on the phone.
+3. **Stop trusting `GetAll` for `Position`.** Worth verifying what Firefox actually returns there. If it is stale or zero, the code already issues a second `Get` in `queryPositionAndCanSeek` (`state.go`), meaning each tick performs two round-trips to obtain one number. Fixing that halves the rate with no behavioural change.
+
+Any of these should be measured with the same method before and after: `dbus-monitor` call rate for round-trips, `/proc/<pid>/stat` deltas for CPU, and `voluntary_ctxt_switches` to confirm the ticker actually stopped rather than merely slowing down.
+
+### SMS push: arming is a one-way door
+
+The phone suppresses every SMS push until the desktop sends `request_conversations` or `request_conversation` once, which sets the plugin's `haveMessagesBeenRequested` flag. **There is no packet that clears it.** A phone that has been armed keeps pushing for the rest of its app's lifetime, whether or not anyone still wants to hear it.
+
+That asymmetry drives the whole design, and it is the part that is easy to get wrong:
+
+- **Arming is gated, not the notifications alone.** `armed()` is true when `[sms] always_arm` is set or a client subscribes to `sms.incoming`. `always_arm` is **off by default**, because an armed phone keeps streaming for the rest of its app's lifetime and opting in should be deliberate. So the bus subscriber-change hook is the default opt-in, and the phone is only asked while somebody is watching.
+- **The arm time is a second, independent gate.** The reply to `request_conversations` is one `kdeconnect.sms.messages` packet *per thread* carrying that thread's head message, so an ungated notify would fire one desktop popup per existing conversation on every connect. `shouldNotify` drops anything older than the arm time.
+- **Notifications stop when clients do, even though packets do not.** Because the ratchet cannot be undone, a single transient `kcd watch` would otherwise silently become a permanent notifier. The armed check in `shouldNotify` is what makes the residual stream a no-op.
+- **Arming is idempotent per connection.** `watch` reconnects with backoff and re-subscribes each time; without the `armedAt` guard every reconnect would re-trigger a full conversation-head burst.
+- **The arming goroutine must stay off the hook.** `bus.Subscribe` invokes hooks inline, and `dev.Send` can block for up to `writeTimeout` (10s) when a peer's send channel is full, so `syncArming` collects targets under the lock and sends in a goroutine.
+- **A reconnect re-arms**, because that is the only recovery available after the phone's own app restarts and resets the flag. A phone-side restart mid-session is therefore the one case that silently stops push until the connection drops.
+- **The phone emits empty batches.** Its content observer fires on any SMS database change with no empty guard of its own, so `handleMessages` returns early on a zero-length batch.
+- **Message bodies never reach the logger**, only the event bus and the notification text. Journals are routinely collected and shipped off-box, and a message is the most sensitive thing this daemon handles. `TestMessageBodyNeverLogged` guards it.
+
+Known gap, accepted: the phone applies its blocked-numbers list only on the deprecated `kdeconnect.telephony` push, not on the content-observer path, so blocked senders can still arrive over `kdeconnect.sms.messages`.
 
 ---
 
@@ -173,17 +206,17 @@ A `Device` wraps an active TCP connection with:
 ```mermaid
 stateDiagram-v2
     direction TB
-    
+
     [*] --> Unpaired
-    
+
     Unpaired --> PairRequested : Local initiates
     PairRequested --> Paired : Peer accepts
     PairRequested --> Unpaired : Peer rejects / timeout
-    
+
     Unpaired --> PairRequestedByPeer : Peer initiates
     PairRequestedByPeer --> Paired : Local accepts
     PairRequestedByPeer --> Unpaired : Local rejects
-    
+
     Paired --> Unpaired : Unpair
 ```
 
@@ -257,7 +290,7 @@ goroutine leak when the child wedges.
 | `notification` | `kdeconnect.notification` | Downloads icon payload over TLS side-channel; per-app filter via `SetFilters()`; `notify-send --help` probe for `--print-id` support; `tlsConfig` + `logger` required in constructor |
 | `pair` | `kdeconnect.pair` | Manages the pairing handshake and certificate fingerprint verification |
 | `ping` | `kdeconnect.ping` | Fires `ping.received`; can be sent outbound |
-| `runcommand` | `kdeconnect.runcommand` | Executes commands from the `[commands]` config table |
+| `runcommand` | `kdeconnect.runcommand`, `kdeconnect.runcommand.output` | Executes commands from the `[commands]` config table; results stream to the phone's output card via `runcommand.output` (`commandStarted` → batched `commandOutput` → `commandFinished`, all sharing one 32-bit id). A capped notification is still sent as a fallback. A 15s bound per execution; `{"stop":true}` from the phone cancels it, as does disconnect. |
 | `sms` | `kdeconnect.sms.messages`, `kdeconnect.sms.attachment_file` | Sends `kdeconnect.sms.request`, `kdeconnect.sms.request_conversations`, `kdeconnect.sms.request_conversation`, `kdeconnect.sms.request_attachment` |
 | `sftp` | `kdeconnect.sftp` | Parses `multiPaths`, `pathNames`, and `errorMessage` from the phone's response. `Info()` returns cached credentials + `StorageVolume` slices; `Volumes()` lists storage roots with human-readable names. `Handle()` logs errors when the phone returns `errorMessage` (e.g. missing storage permission). Mounts at server root to avoid chroot double-path bug; tracks mounts in `mountPoints` map; `Unmount()` calls `fusermount3`/`fusermount` |
 | `share` | `kdeconnect.share.request` | Streaming file receive + URL/text handling; fires progress events |
