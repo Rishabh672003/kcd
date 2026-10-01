@@ -1,0 +1,56 @@
+amends "package://github.com/jdx/hk/releases/download/v2.4.0/hk@2.4.0#/Config.pkl"
+import "package://github.com/jdx/hk/releases/download/v2.4.0/hk@2.4.0#/Builtins.pkl"
+// Using a coding agent? See https://hk.jdx.dev/agents
+
+// Declaring top-level steps creates the implicit check, fix, and pre-commit
+// hooks. `hk install` wires the git pre-commit hook to `hk run pre-commit`,
+// which applies fixes and stages the result.
+//
+// These mirror what CI actually enforces, and every tool here is already
+// available, so a clean checkout passes.
+steps {
+    ["go_fmt"] = Builtins.go_fmt
+    ["go_vet"] = Builtins.go_vet
+    ["golangci_lint"] = Builtins.golangci_lint
+    ["golangci_lint_fmt"] = Builtins.golangci_lint_fmt
+    ["gomod_tidy"] = Builtins.gomod_tidy
+    ["trailing_whitespace"] = Builtins.trailing_whitespace
+}
+
+// The repo ships shell scripts and GitHub workflows that nothing currently
+// checks. These are worth having, but the tools are not installed and CI does
+// not run them, so they stay opt-in: `hk check --profile shell`.
+//
+// Promote one to the default set once its tool is added to mise.toml and CI.
+local extra = new Mapping<String, Step> {
+    ["shellcheck"] = (Builtins.shellcheck) { profiles = List("shell") }
+    ["shellharden"] = (Builtins.shellharden) { profiles = List("shell") }
+    ["shfmt"] = (Builtins.shfmt) { profiles = List("shell") }
+    ["actionlint"] = (Builtins.actionlint) { profiles = List("shell") }
+    ["zizmor"] = (Builtins.zizmor) { profiles = List("shell") }
+    ["go_vuln_check"] = (Builtins.go_vuln_check) { profiles = List("slow") }
+}
+
+hooks {
+    ["check"] {
+        steps = extra
+    }
+    ["fix"] {
+        steps = extra
+    }
+    ["pre-commit"] {
+        steps = extra
+    }
+}
+
+// The upstream KDE Connect trees are checked out for reference only. They are
+// gitignored, so hk skips them already; excluding them keeps that true even if
+// the ignore entry goes away.
+exclude = List("kdeconnect-kde", "flake.lock")
+
+// Let hk size the pool from the machine instead of a fixed number.
+jobs = 0
+
+// Report every failure in one pass instead of stopping at the first, so a
+// single missing tool does not hide the rest of the run.
+fail_fast = false
