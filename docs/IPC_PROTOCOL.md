@@ -1354,6 +1354,7 @@ who may want to implement a full network-level implementation.
 | `kdeconnect.notification.request` | Notification | Clear a notification on the phone (`{"cancel": "<id>"}`) |
 | `kdeconnect.notification` | RunCommand | Command output notification pushed to phone |
 | `kdeconnect.runcommand` | RunCommand | Send command list to phone |
+| `kdeconnect.runcommand.output` | RunCommand | Stream execution results to the phone's output card |
 | `kdeconnect.runcommand.request` | RunCommand | Request phone's command list / execute command |
 | `kdeconnect.share.request` | Share | File transfer invitation (side-channel) |
 | `kdeconnect.sftp.request` | SFTP | Request the phone to start its SFTP server |
@@ -1403,7 +1404,8 @@ plugin processes it and a link to the body struct definition.
 | `kdeconnect.mpris` | MPRIS | `MPRISRequest{RequestPlayerList, RequestNowPlaying, RequestVolume, Player, Action, AlbumArtUrl, TransferringAlbumArt, ...}` — inbound packets with `transferringAlbumArt: true` + `payloadTransferInfo` carry album art bytes (side channel) that the daemon caches to `$XDG_CACHE_HOME/kcd/art/` |
 | `kdeconnect.mpris.request` | MPRIS | `MPRISRequest{}` (same struct, different semantics) — an outbound `kdeconnect.mpris.request` with `player` + `albumArtUrl` asks the phone to stream art back |
 | `kdeconnect.runcommand` | RunCommand | `{CommandList string}` — the phone's reply to a command-list request, holding a JSON object of label → `{name, command}` |
-| `kdeconnect.runcommand.request` | RunCommand | `RequestBody{RequestCommandList bool, Key string}` |
+| `kdeconnect.runcommand.request` | RunCommand | `RequestBody{RequestCommandList bool, Key string, Stop bool, ID int32}` — `Stop`+`ID` cancels a running execution |
+| `kdeconnect.runcommand.output` | RunCommand | Execution results. One packet type, three shapes distinguished by which key is present: `{"commandStarted":true,"id":N,"command":"label"}`, `{"commandOutput":true,"id":N,"stdout":[...],"stderr":[...]}`, `{"commandFinished":true,"id":N,"success":bool}`. Order is mandatory — the phone registers a display row on `commandStarted` and keys every later packet for that execution to the same `id`. `id` is read with `getInt`, so it must fit a 32-bit int. Both `stdout` and `stderr` must be present on every `commandOutput` batch; the phone iterates both lists without a null check. |
 | `kdeconnect.presenter` | Presenter | `PresenterBody{Dx, Dy *float64, Stop *bool}` |
 | `kdeconnect.systemvolume` | RemoteSystemVolume | `VolumeBody{SinkList, Name, Volume, Muted}` |
 
