@@ -292,10 +292,10 @@ except KeyboardInterrupt:
 | `sms.incoming` | SMS/MMS received |
 
 > **SMS freshness:** the phone only pushes new messages after the daemon
-> has asked once, which it does on connect when `[sms] always_arm` is set
-> (the default). Set `always_arm = false` and the ask happens only while a
-> client subscribes to `sms.incoming`, so `kcd watch --events sms.incoming`
-> is all it takes to receive messages live. The phone cannot be un-asked,
+> has asked once, which by default happens only while a client subscribes to
+> `sms.incoming` — so `kcd watch --events sms.incoming` is all it takes to
+> receive messages live. Set `[sms] always_arm = true` to ask on every
+> connect instead and notify with no client attached. The phone cannot be un-asked,
 > so a client that subscribes leaves the phone pushing afterwards; the
 > daemon keeps publishing events in that case but stays quiet on desktop
 > notifications. Messages that predate the ask arrive as a one-off burst of

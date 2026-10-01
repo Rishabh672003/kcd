@@ -66,10 +66,9 @@ func newArmingPlugin(t *testing.T, cfg config.SMSConfig) (*SMSPlugin, *events.Bu
 	return NewSMSPlugin(cfg, bus, nil, log.Nop()), bus
 }
 
-// always_arm defaults on, so a plain connect asks the phone to push.
-func TestOnConnectArmsPushByDefault(t *testing.T) {
-	cfg := config.SMSConfig{}
-	cfg.Defaults()
+// Opting in arms the phone on connect.
+func TestOnConnectArmsWhenAlwaysArmSet(t *testing.T) {
+	cfg := config.SMSConfig{AlwaysArm: true}
 	p, _ := newArmingPlugin(t, cfg)
 	dev := &syncCaptureSender{}
 
@@ -78,6 +77,25 @@ func TestOnConnectArmsPushByDefault(t *testing.T) {
 
 	if got := dev.count(PacketTypeSMSRequestConvs); got != 1 {
 		t.Fatalf("request_conversations sent %d times, want 1", got)
+	}
+}
+
+// The shipped default must not ask the phone for anything: an armed phone
+// cannot be un-armed, so opting in has to be deliberate.
+func TestDefaultsDoNotArm(t *testing.T) {
+	cfg := config.SMSConfig{}
+	cfg.Defaults()
+	if cfg.AlwaysArm {
+		t.Fatal("SMSConfig.Defaults sets AlwaysArm; an armed phone cannot be un-armed")
+	}
+
+	p, _ := newArmingPlugin(t, cfg)
+	dev := &syncCaptureSender{}
+	p.OnConnect(dev)
+	time.Sleep(100 * time.Millisecond)
+
+	if got := len(dev.types()); got != 0 {
+		t.Fatalf("default config sent %v, want nothing", dev.types())
 	}
 }
 
@@ -114,8 +132,7 @@ func TestArmsWhenSubscribed(t *testing.T) {
 // idempotent per connection so a reconnecting watcher cannot re-trigger a
 // conversation-head burst each time.
 func TestArmsOnlyOncePerConnection(t *testing.T) {
-	cfg := config.SMSConfig{}
-	cfg.Defaults()
+	cfg := config.SMSConfig{AlwaysArm: true}
 	p, bus := newArmingPlugin(t, cfg)
 	dev := &syncCaptureSender{}
 
@@ -134,8 +151,7 @@ func TestArmsOnlyOncePerConnection(t *testing.T) {
 }
 
 func TestOnDisconnectForgetsDevice(t *testing.T) {
-	cfg := config.SMSConfig{}
-	cfg.Defaults()
+	cfg := config.SMSConfig{AlwaysArm: true}
 	p, _ := newArmingPlugin(t, cfg)
 	dev := &syncCaptureSender{}
 
@@ -154,8 +170,7 @@ func TestOnDisconnectForgetsDevice(t *testing.T) {
 // The phone's content observer has no empty guard, so empty batches are
 // routine once armed and must not produce events.
 func TestEmptyBatchPublishesNothing(t *testing.T) {
-	cfg := config.SMSConfig{}
-	cfg.Defaults()
+	cfg := config.SMSConfig{NotifyIncoming: true}
 	p, bus := newArmingPlugin(t, cfg)
 	sub := bus.Subscribe(4, events.TypeSMSIncoming)
 	defer sub.Close()
@@ -180,8 +195,7 @@ func TestEmptyBatchPublishesNothing(t *testing.T) {
 
 // Messages that predate the arm are the reply burst, not new mail.
 func TestShouldNotifyDropsArmingBurst(t *testing.T) {
-	cfg := config.SMSConfig{}
-	cfg.Defaults()
+	cfg := config.SMSConfig{NotifyIncoming: true}
 	p, _ := newArmingPlugin(t, cfg)
 
 	armAt := time.Now()
@@ -201,8 +215,7 @@ func TestShouldNotifyDropsArmingBurst(t *testing.T) {
 // The phone cannot be un-armed, so packets keep arriving after every
 // client leaves. Notifications must stop regardless.
 func TestShouldNotifySilentWhenUnarmed(t *testing.T) {
-	cfg := config.SMSConfig{}
-	cfg.Defaults()
+	cfg := config.SMSConfig{NotifyIncoming: true}
 	p, _ := newArmingPlugin(t, cfg)
 
 	fresh := SMSMessage{Body: "hello", Type: 1, Date: time.Now().UnixMilli() + 1}
@@ -213,8 +226,7 @@ func TestShouldNotifySilentWhenUnarmed(t *testing.T) {
 
 // Outbound messages come back in the same batch and must not notify.
 func TestShouldNotifyIgnoresOutbound(t *testing.T) {
-	cfg := config.SMSConfig{}
-	cfg.Defaults()
+	cfg := config.SMSConfig{NotifyIncoming: true}
 	p, _ := newArmingPlugin(t, cfg)
 
 	outbound := SMSMessage{Body: "sent", Type: 2, Date: time.Now().UnixMilli() + 1}

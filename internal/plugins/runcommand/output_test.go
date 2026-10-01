@@ -419,3 +419,59 @@ func contains(haystack []string, needle string) bool {
 	}
 	return false
 }
+
+// A command that forks a child and waits is the shape of any real workload
+// that spawns a subprocess. exec.CommandContext kills only the shell, so the
+// orphan keeps the pipe write end open: without closing our read ends on
+// cancellation the scanners never see EOF and the plugin's WaitGroup never
+// drains. This is the case that hung in CI, where /bin/sh forks where the
+// local one happens to exec.
+func TestStopCancelsCommandThatForksChildren(t *testing.T) {
+	p := newTestPlugin(map[string]string{"fork": "{ sleep 30 & wait; }"})
+	dev := &outputSender{id: "dev1"}
+
+	pkt := &protocol.Packet{
+		Type: "kdeconnect.runcommand.request",
+		Body: json.RawMessage(`{"key":"fork"}`),
+	}
+	if err := p.Handle(context.Background(), dev, pkt); err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+
+	var id int32
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		p.Mu.RLock()
+		for candidate := range p.running["dev1"] {
+			id = candidate
+		}
+		p.Mu.RUnlock()
+		if id != 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if id == 0 {
+		p.wg.Wait()
+		t.Fatal("execution never registered")
+	}
+
+	stopBody, err := json.Marshal(map[string]any{"stop": true, "id": id})
+	if err != nil {
+		t.Fatalf("marshal stop: %v", err)
+	}
+	if err := p.Handle(context.Background(), dev, &protocol.Packet{
+		Type: "kdeconnect.runcommand.request",
+		Body: stopBody,
+	}); err != nil {
+		t.Fatalf("stop Handle: %v", err)
+	}
+
+	done := make(chan struct{})
+	go func() { p.wg.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("stop did not cancel a forking command")
+	}
+}

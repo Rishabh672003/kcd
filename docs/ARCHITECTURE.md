@@ -131,7 +131,7 @@ The phone suppresses every SMS push until the desktop sends `request_conversatio
 
 That asymmetry drives the whole design, and it is the part that is easy to get wrong:
 
-- **Arming is gated, not the notifications alone.** `armed()` is true when `[sms] always_arm` is set (the default, matching upstream) or a client subscribes to `sms.incoming`. With `always_arm = false` a bus subscriber-change hook is the opt-in, so the phone is only asked while somebody is actually watching.
+- **Arming is gated, not the notifications alone.** `armed()` is true when `[sms] always_arm` is set or a client subscribes to `sms.incoming`. `always_arm` is **off by default**, because an armed phone keeps streaming for the rest of its app's lifetime and opting in should be deliberate. So the bus subscriber-change hook is the default opt-in, and the phone is only asked while somebody is watching.
 - **The arm time is a second, independent gate.** The reply to `request_conversations` is one `kdeconnect.sms.messages` packet *per thread* carrying that thread's head message, so an ungated notify would fire one desktop popup per existing conversation on every connect. `shouldNotify` drops anything older than the arm time.
 - **Notifications stop when clients do, even though packets do not.** Because the ratchet cannot be undone, a single transient `kcd watch` would otherwise silently become a permanent notifier. The armed check in `shouldNotify` is what makes the residual stream a no-op.
 - **Arming is idempotent per connection.** `watch` reconnects with backoff and re-subscribes each time; without the `armedAt` guard every reconnect would re-trigger a full conversation-head burst.

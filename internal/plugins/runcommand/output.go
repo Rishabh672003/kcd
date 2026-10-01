@@ -215,6 +215,23 @@ func (p *RunCommandPlugin) streamOutput(
 
 	stream = &outputStream{dev: dev, logger: p.logger, id: id, command: key}
 
+	// exec.CommandContext kills only the direct child. If the shell forks
+	// rather than execs, the orphan keeps the write end of the pipes open, so
+	// the scanners would never see EOF and Wait would never be reached --
+	// cancelling would hang instead of stopping. Closing our read ends when
+	// the context ends makes that unblock deterministically, whatever the
+	// shell does.
+	scanDone := make(chan struct{})
+	defer close(scanDone)
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = stdoutPipe.Close()
+			_ = stderrPipe.Close()
+		case <-scanDone:
+		}
+	}()
+
 	lines := make(chan line, streamChanBuffer)
 	var readers sync.WaitGroup
 	readers.Add(2)

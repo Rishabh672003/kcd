@@ -75,11 +75,9 @@ func (p *SMSPlugin) RequestAttachment(dev device.Sender, partID int64, uniqueIde
 
 // --- Arming ------------------------------------------------------------------
 
-// armed reports whether the phone should be streaming new SMS to us.
-//
-// The phone suppresses every push until it has been asked once, so this
-// is the single gate for "do we want SMS". It is on by default, matching
-// upstream KDE Connect, and costs one packet per connection with no timers.
+// armed reports whether the phone should be streaming new SMS to us. The
+// phone suppresses every push until it has been asked once, so this is the
+// single gate. It is off by default: an armed phone cannot be un-armed.
 func (p *SMSPlugin) armed() bool {
 	if p.cfg.AlwaysArm {
 		return true

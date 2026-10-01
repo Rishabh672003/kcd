@@ -1101,8 +1101,9 @@ kcd watch --events=sms.incoming
 ```
 
 The phone pushes messages as they arrive, so this needs no polling and no
-request command. With `[sms] always_arm = false` the subscription is also what
-arms the push, so nothing is asked of the phone until this command is running.
+request command. Since `[sms] always_arm` is off by default, this
+subscription is also what arms the push — nothing is asked of the phone
+until it is running.
 
 **Raw NDJSON for scripting**
 

@@ -83,8 +83,8 @@ func NewSMSPlugin(cfg config.SMSConfig, bus *events.Bus, tlsConfig *tls.Config, 
 		armedAt:       make(map[string]time.Time),
 	}
 
-	// Arming is owner-gated: with always_arm off, the phone is only asked
-	// to push while a client is watching sms.incoming.
+	// Arming is owner-gated: the phone is only asked to push while a client
+	// is watching sms.incoming, or when always_arm is set.
 	if bus != nil {
 		bus.OnSubscriberChange(p.syncArming)
 	}
