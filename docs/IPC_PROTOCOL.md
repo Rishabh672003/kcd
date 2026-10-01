@@ -283,9 +283,11 @@ shape as `connectivity.update` event payloads).
 | `signalStrength` | number | Level 0 (no signal) – 4 (full) |
 
 Errors: `device not found`, `connectivity plugin not enabled`,
-`no connectivity data (device offline or never reported)`. Reports are
-requested fresh on every connect; `kcd watch` also emits a cached
-`connectivity.update` on subscribe so clients never boot blind.
+`no connectivity data (device offline or never reported)`. The daemon
+never requests a report: Android's connectivity plugin declares no incoming
+packet types, so a request would be discarded. The phone pushes one whenever
+its signal state changes and the daemon caches the last; `kcd watch` also
+emits a cached `connectivity.update` on subscribe so clients never boot blind.
 
 #### `clipboard_push`
 

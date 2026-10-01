@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/x509"
 	"net"
+	"sync"
 	"testing"
 	"time"
 
@@ -29,6 +30,27 @@ func (s testSender) PeerCert() *x509.Certificate             { return nil }
 func (s testSender) HasCapability(string) bool               { return false }
 func (s testSender) UpdateBattery(charge int, charging bool) {}
 func (s testSender) GetBattery() (int, bool)                 { return 0, false }
+
+// countingSender records outbound packets so a no-op can be asserted rather
+// than inferred from the absence of output.
+type countingSender struct {
+	testSender
+	mu   sync.Mutex
+	sent []*protocol.Packet
+}
+
+func (s *countingSender) Send(p *protocol.Packet) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sent = append(s.sent, p)
+	return nil
+}
+
+func (s *countingSender) count() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.sent)
+}
 
 func TestHandleDeduplicatesConnectivityReports(t *testing.T) {
 	bus := events.NewBus(log.Nop())
@@ -133,5 +155,22 @@ func TestReportCachesLastHandle(t *testing.T) {
 	plugin.OnDisconnect(dev)
 	if _, ok := plugin.Report("device-1"); ok {
 		t.Error("expected miss after disconnect clears the cache")
+	}
+}
+
+// The phone's ConnectivityReportPlugin declares supportedPacketTypes as empty
+// and rejects every packet in onPacketReceived, so asking for a report is
+// pointless. The phone pushes on its own when its telephony listener fires.
+// This pins that OnConnect stays silent: without it, a reader has no way to tell
+// a deliberate no-op from a forgotten request, and someone will re-add it.
+func TestOnConnectSendsNothing(t *testing.T) {
+	bus := events.NewBus(log.Nop())
+	plugin := NewConnectivityPlugin(bus)
+	dev := &countingSender{testSender: testSender{id: "device-1"}}
+
+	plugin.OnConnect(dev)
+
+	if n := dev.count(); n != 0 {
+		t.Errorf("OnConnect sent %d packets, want 0", n)
 	}
 }

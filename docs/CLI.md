@@ -367,8 +367,9 @@ showing an empty bar, and an `unknown` or absent network type reads `Cellular`.
 
 `--json` prints the raw report (same shape as `connectivity.update` event
 payloads) for scripting. Exits non-zero with `no connectivity data` when
-the device is offline or never reported — reports are requested fresh on
-every connect.
+the device is offline or has not reported yet. The phone pushes a report
+whenever its signal state changes; the daemon does not ask, because Android's
+plugin cannot receive a request.
 
 > For continuous monitoring, use `kcd watch --events=connectivity.update` instead.
 
