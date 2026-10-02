@@ -15,6 +15,7 @@ func TestRunCommandPlugin_Handle_GlobalCommand(t *testing.T) {
 	p := NewRunCommandPlugin(
 		map[string]string{"key1": "echo test"},
 		nil,
+		nil,
 		logger,
 	)
 
@@ -33,6 +34,7 @@ func TestRunCommandPlugin_Handle_PerDeviceOverrides(t *testing.T) {
 		map[string]map[string]string{
 			"dev1": {"cmd": "echo per-device"},
 		},
+		nil,
 		logger,
 	)
 
@@ -61,6 +63,7 @@ func TestRunCommandPlugin_Handle_RequestCommandList(t *testing.T) {
 		map[string]map[string]string{
 			"dev1": {"device-only": "echo dev-only"},
 		},
+		nil,
 		logger,
 	)
 

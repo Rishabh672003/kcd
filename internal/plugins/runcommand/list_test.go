@@ -53,7 +53,7 @@ func replyWith(t *testing.T, commandList string) *protocol.Packet {
 
 func TestRequestListReturnsDeviceCommands(t *testing.T) {
 	logger := log.NewTest(t)
-	p := NewRunCommandPlugin(nil, nil, logger)
+	p := NewRunCommandPlugin(nil, nil, nil, logger)
 
 	sender := &listSender{id: "dev1"}
 	sender.onSend = func(pkt *protocol.Packet) {
@@ -87,7 +87,7 @@ func TestRequestListReturnsDeviceCommands(t *testing.T) {
 // second `kcd run list` would be rejected as "already in flight" forever.
 func TestRequestListReleasesWaiterAfterReply(t *testing.T) {
 	logger := log.NewTest(t)
-	p := NewRunCommandPlugin(nil, nil, logger)
+	p := NewRunCommandPlugin(nil, nil, nil, logger)
 
 	sender := &listSender{id: "dev1"}
 	sender.onSend = func(pkt *protocol.Packet) {
@@ -112,7 +112,7 @@ func TestRequestListReleasesWaiterAfterReply(t *testing.T) {
 // read loop or crash on a nil channel.
 func TestHandleListReplyWithoutWaiterDoesNotBlock(t *testing.T) {
 	logger := log.NewTest(t)
-	p := NewRunCommandPlugin(nil, nil, logger)
+	p := NewRunCommandPlugin(nil, nil, nil, logger)
 	sender := &listSender{id: "dev1"}
 
 	done := make(chan struct{})
@@ -133,7 +133,7 @@ func TestHandleListReplyWithoutWaiterDoesNotBlock(t *testing.T) {
 // A malformed list must not wedge the waiter or panic.
 func TestHandleListReplyMalformedIsDropped(t *testing.T) {
 	logger := log.NewTest(t)
-	p := NewRunCommandPlugin(nil, nil, logger)
+	p := NewRunCommandPlugin(nil, nil, nil, logger)
 	sender := &listSender{id: "dev1"}
 
 	if err := p.Handle(context.Background(), sender, replyWith(t, `not json`)); err != nil {
@@ -175,7 +175,7 @@ func TestParseCommandListFallsBackToKey(t *testing.T) {
 // than race for the single reply.
 func TestRequestListRejectsConcurrentRequest(t *testing.T) {
 	logger := log.NewTest(t)
-	p := NewRunCommandPlugin(nil, nil, logger)
+	p := NewRunCommandPlugin(nil, nil, nil, logger)
 
 	// No onSend: the first request parks until its context is cancelled.
 	sender := &listSender{id: "dev1"}

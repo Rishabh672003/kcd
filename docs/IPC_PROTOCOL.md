@@ -1296,7 +1296,47 @@ this daemon to ring).
 
 **Payload:** none (`null`)
 
-### 5.14 MPRIS Events
+### 5.14 RunCommand Events
+
+#### `runcommand.output`
+
+Output of a command the phone triggered locally, in three shapes distinguished
+by `status`.
+
+**Payload (`status: "started"`):**
+
+```json
+{"id": 7, "key": "uptime", "status": "started"}
+```
+
+**Payload (`status: "output"`)** — a batch of lines:
+
+```json
+{"id": 7, "key": "uptime", "status": "output", "stdout": ["up 3 days"], "stderr": [], "truncated": false}
+```
+
+**Payload (`status: "finished"`):**
+
+```json
+{"id": 7, "key": "uptime", "status": "finished", "success": true, "output": "up 3 days"}
+```
+
+`id` matches the execution id the phone sent, and `key` is the command label
+from the `[commands]` config table.
+
+> **Batches are subscriber-gated.** `started` and `finished` are always
+> published. `output` batches are published **only while at least one client is
+> subscribed to `runcommand.output`**, so a chatty command does not push four
+> events a second to nobody. A client that wants the transcript without
+> subscribing to every batch can rely on `finished`, which carries the whole
+> (capped) transcript.
+
+> **Caps:** output is bounded to 2000 lines and 1024 characters per line. A
+> batch reports `"truncated": true` once the line cap was hit, and the
+> `finished` transcript is capped separately at 4000 bytes since it is a
+> summary rather than a log.
+
+### 5.15 MPRIS Events
 
 #### `mpris.update`
 

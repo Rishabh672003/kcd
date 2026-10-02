@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/bethropolis/kcd/internal/device"
+	"github.com/bethropolis/kcd/internal/events"
 	"github.com/bethropolis/kcd/internal/log"
 	"github.com/bethropolis/kcd/internal/protocol"
 )
@@ -30,11 +31,12 @@ type RunCommandPlugin struct {
 	// timestamp because the phone reads the id with getInt, which would
 	// overflow on a nanosecond value.
 	execSeq int32
+	bus     *events.Bus
 	logger  log.Logger
 	wg      sync.WaitGroup // exported for tests to synchronize with background goroutines
 }
 
-func NewRunCommandPlugin(commands map[string]string, commandsPerDevice map[string]map[string]string, logger log.Logger) *RunCommandPlugin {
+func NewRunCommandPlugin(commands map[string]string, commandsPerDevice map[string]map[string]string, bus *events.Bus, logger log.Logger) *RunCommandPlugin {
 	if commandsPerDevice == nil {
 		commandsPerDevice = make(map[string]map[string]string)
 	}
@@ -43,6 +45,7 @@ func NewRunCommandPlugin(commands map[string]string, commandsPerDevice map[strin
 		CommandsPerDevice: commandsPerDevice,
 		pendingLists:      make(map[string]chan []Command),
 		running:           make(map[string]map[int32]context.CancelFunc),
+		bus:               bus,
 		logger:            logger.With(log.String("plugin", "runcommand")),
 	}
 }

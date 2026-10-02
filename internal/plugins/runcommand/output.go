@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/bethropolis/kcd/internal/device"
+	"github.com/bethropolis/kcd/internal/events"
 	"github.com/bethropolis/kcd/internal/log"
 	"github.com/bethropolis/kcd/internal/protocol"
 )
@@ -54,6 +55,7 @@ type outputStream struct {
 	mu      sync.Mutex
 	dev     device.Sender
 	logger  log.Logger
+	bus     *events.Bus
 	id      int32
 	command string
 
@@ -67,6 +69,9 @@ type outputStream struct {
 	// dropped records that the line cap was hit, so the final batch can say so
 	// rather than silently ending early.
 	dropped bool
+	// announced records that the started event went out, so the paired
+	// finished event is not published for an execution that never began.
+	announced bool
 	// stopped records that the execution was cancelled, so the finish packet
 	// reports failure even if the process happened to exit zero.
 	stopped bool
@@ -159,12 +164,44 @@ func (s *outputStream) send(stdout, stderr []string, dropped bool) {
 
 // flush sends a batch only when lines are buffered, so an idle command does not
 // generate traffic.
+//
+// The bus copy is gated on subscribers. A chatty command would otherwise
+// publish four events a second to nobody, and the bus drops events (with a
+// warning) once a slow subscriber fills its channel -- so an unfiltered feed
+// would both waste work and make the drop warnings fire for output nobody
+// asked for. The lifecycle events are unconditional, so a client can still
+// learn the result of a command it was not watching line by line.
 func (s *outputStream) flush() {
 	if !s.pending() {
 		return
 	}
 	stdout, stderr, dropped := s.take()
 	s.send(stdout, stderr, dropped)
+
+	if s.bus == nil || !s.bus.HasSubscribers(events.TypeRunCommandOutput) {
+		return
+	}
+	s.bus.Publish(events.TypeRunCommandOutput, s.dev.ID(), map[string]any{
+		"id":        s.id,
+		"key":       s.command,
+		"status":    "output",
+		"stdout":    stdout,
+		"stderr":    stderr,
+		"truncated": dropped,
+	})
+}
+
+// publishLifecycle announces a start or finish. Unconditional: these are two
+// events per command and carry the result a client needs most.
+func (s *outputStream) publishLifecycle(status string, extra map[string]any) {
+	if s.bus == nil {
+		return
+	}
+	payload := map[string]any{"id": s.id, "key": s.command, "status": status}
+	for k, v := range extra {
+		payload[k] = v
+	}
+	s.bus.Publish(events.TypeRunCommandOutput, s.dev.ID(), payload)
 }
 
 // line is one scanned line tagged with the stream it came from.
@@ -191,12 +228,28 @@ func (p *RunCommandPlugin) streamOutput(
 	// The finish packet reports the outcome, so it is always sent exactly
 	// once, including on the early-return paths below.
 	var success bool
+	// summary is filled in on the normal exit path and read by the deferred
+	// publish, so the transcript is rendered once rather than twice.
+	var summary string
 	defer func() {
 		if stream != nil && stream.stopped {
 			success = false
 		}
+		// Only for an execution that actually started, so a client never sees
+		// a finish with no matching start.
+		if stream != nil && stream.announced {
+			stream.publishLifecycle("finished", map[string]any{
+				"success": success,
+				"output":  summary,
+			})
+		}
 		p.finishOutput(dev, id, success)
 	}()
+
+	// Built before the pipes exist so the deferred finish can still find it on
+	// the early-return paths; announced stays false until the process is
+	// actually running, so a failed start publishes neither half.
+	stream = &outputStream{dev: dev, logger: p.logger, bus: p.bus, id: id, command: key}
 
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
@@ -212,8 +265,8 @@ func (p *RunCommandPlugin) streamOutput(
 		p.logger.Warn("runcommand: start", log.Error(err))
 		return ""
 	}
-
-	stream = &outputStream{dev: dev, logger: p.logger, id: id, command: key}
+	stream.announced = true
+	stream.publishLifecycle("started", nil)
 
 	// exec.CommandContext kills only the direct child. If the shell forks
 	// rather than execs, the orphan keeps the write end of the pipes open, so
@@ -275,7 +328,8 @@ func (p *RunCommandPlugin) streamOutput(
 	waitErr := cmd.Wait()
 	success = waitErr == nil
 
-	return stream.summary()
+	summary = stream.summary()
+	return summary
 }
 
 // drainLines consumes everything currently buffered and reports whether the

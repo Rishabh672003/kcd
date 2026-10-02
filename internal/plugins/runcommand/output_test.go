@@ -5,11 +5,13 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"net"
+	"slices"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/bethropolis/kcd/internal/device"
+	"github.com/bethropolis/kcd/internal/events"
 	"github.com/bethropolis/kcd/internal/log"
 	"github.com/bethropolis/kcd/internal/protocol"
 )
@@ -83,7 +85,11 @@ func runKey(t *testing.T, p *RunCommandPlugin, dev *outputSender, key string) {
 }
 
 func newTestPlugin(commands map[string]string) *RunCommandPlugin {
-	return NewRunCommandPlugin(commands, nil, log.Nop())
+	return NewRunCommandPlugin(commands, nil, nil, log.Nop())
+}
+
+func newTestPluginWithBus(commands map[string]string, bus *events.Bus) *RunCommandPlugin {
+	return NewRunCommandPlugin(commands, nil, bus, log.Nop())
 }
 
 // The phone keys its output rows off the id registered by commandStarted, and
@@ -473,5 +479,86 @@ func TestStopCancelsCommandThatForksChildren(t *testing.T) {
 	case <-done:
 	case <-time.After(10 * time.Second):
 		t.Fatal("stop did not cancel a forking command")
+	}
+}
+
+// drainEvents collects published payloads for the given event type.
+func drainEvents(t *testing.T, sub *events.Subscriber) []map[string]any {
+	t.Helper()
+	var out []map[string]any
+	for {
+		select {
+		case ev := <-sub.C:
+			payload, ok := ev.Payload.(map[string]any)
+			if !ok {
+				t.Fatalf("payload is %T, want map[string]any", ev.Payload)
+			}
+			out = append(out, payload)
+		case <-time.After(150 * time.Millisecond):
+			return out
+		}
+	}
+}
+
+func statuses(evs []map[string]any) []string {
+	got := make([]string, 0, len(evs))
+	for _, e := range evs {
+		s, _ := e["status"].(string)
+		got = append(got, s)
+	}
+	return got
+}
+
+// With a subscriber attached, output must stream as it arrives -- that is the
+// whole point of the gated publish.
+func TestOutputStream_PublishesBatchesWhenSubscribed(t *testing.T) {
+	bus := events.NewBus(log.Nop())
+	sub := bus.Subscribe(0, events.TypeRunCommandOutput)
+	defer sub.Close()
+
+	p := newTestPluginWithBus(map[string]string{"hello": "echo one; echo two"}, bus)
+	dev := &outputSender{id: "dev1"}
+	runKey(t, p, dev, "hello")
+
+	evs := drainEvents(t, sub)
+	got := statuses(evs)
+	if got[0] != "started" {
+		t.Errorf("first event = %q, want started", got[0])
+	}
+	if got[len(got)-1] != "finished" {
+		t.Errorf("last event = %q, want finished", got[len(got)-1])
+	}
+	if len(got) < 3 {
+		t.Fatalf("expected at least started/output/finished, got %v", got)
+	}
+	if !slices.Contains(got, "output") {
+		t.Errorf("no output batch was published while subscribed, got %v", got)
+	}
+	if evs[len(evs)-1]["success"] != true {
+		t.Errorf("finished event success = %v, want true", evs[len(evs)-1]["success"])
+	}
+}
+
+// The batch gate asks HasSubscribers, so what matters is that an unrelated
+// filter does not open it. There is no way to observe a *suppressed* publish
+// from outside -- the bus drops anything the subscriber did not ask for, which
+// is exactly the same observable outcome -- so this pins the gate's input.
+func TestRunCommandOutputGate_FollowsSubscribers(t *testing.T) {
+	bus := events.NewBus(log.Nop())
+
+	if bus.HasSubscribers(events.TypeRunCommandOutput) {
+		t.Error("gate open with no subscribers at all")
+	}
+
+	other := bus.Subscribe(0, events.TypeBatteryUpdate)
+	defer other.Close()
+	if bus.HasSubscribers(events.TypeRunCommandOutput) {
+		t.Error("gate opened by a subscriber filtered on another event type")
+	}
+
+	watcher := bus.Subscribe(0, events.TypeRunCommandOutput)
+	defer watcher.Close()
+	if !bus.HasSubscribers(events.TypeRunCommandOutput) {
+		t.Error("gate closed while a runcommand.output subscriber is attached")
 	}
 }

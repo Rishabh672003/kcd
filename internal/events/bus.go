@@ -35,8 +35,10 @@ const (
 	TypeSftpMount          EventType = "sftp.mount"
 	// TypeSftpMounted and TypeSftpUnmounted report mount state transitions,
 	// unlike TypeSftpMount which fires when credentials arrive.
-	TypeSftpMounted          EventType = "sftp.mounted"
-	TypeSftpUnmounted        EventType = "sftp.unmounted"
+	TypeSftpMounted   EventType = "sftp.mounted"
+	TypeSftpUnmounted EventType = "sftp.unmounted"
+	// TypeRunCommandOutput reports locally executed command output.
+	TypeRunCommandOutput     EventType = "runcommand.output"
 	TypeNotificationCanceled EventType = "notification.canceled"
 	TypeVolumeUpdate         EventType = "volume.update"
 	TypeSMSIncoming          EventType = "sms.incoming"

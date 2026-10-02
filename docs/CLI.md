@@ -1052,6 +1052,7 @@ kcd watch [--events <type,...>] [--json]
 | `sftp.mount` | SFTP credentials: `{uri, ip, port, user, password, path, multiPaths, pathNames, errorMessage}` |
 | `sftp.mounted` | Mount finished: `{mountPoint, volume?}` |
 | `sftp.unmounted` | Mount released: `{mountPoint}` |
+| `runcommand.output` | Local command execution: `{id, key, status, stdout?, stderr?, output?, success?, truncated?}`, where `status` is `started`, `output` or `finished`. Output batches arrive only while a client is subscribed |
 | `battery.threshold` | Battery low/full alert: `{charge, charging, event}` |
 | `telephony.talking` | Call in progress: `{contactName, phoneNumber}` |
 | `sms.incoming` | SMS/MMS received: `{body, sender, date, thread_id, read}` |

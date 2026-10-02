@@ -202,6 +202,33 @@ func TestFormatEventNewTypes(t *testing.T) {
 			want: "[d1] contacts: 2 added, 5 pending\n",
 		},
 		{
+			name: "runcommand started",
+			ev:   events.Event{Type: events.TypeRunCommandOutput, DeviceID: "d1", Payload: map[string]any{"id": 7, "key": "uptime", "status": "started"}},
+			want: "[d1] runcommand uptime: running\n",
+		},
+		{
+			name: "runcommand output batch",
+			ev: events.Event{Type: events.TypeRunCommandOutput, DeviceID: "d1", Payload: map[string]any{
+				"id": 7, "key": "uptime", "status": "output",
+				"stdout": []any{"up 3 days"}, "stderr": []any{"warn: x"},
+			}},
+			want: "[d1] runcommand uptime: out: up 3 days | err: warn: x\n",
+		},
+		{
+			name: "runcommand finished",
+			ev: events.Event{Type: events.TypeRunCommandOutput, DeviceID: "d1", Payload: map[string]any{
+				"id": 7, "key": "uptime", "status": "finished", "success": true, "output": "up 3 days",
+			}},
+			want: "[d1] runcommand uptime: up 3 days\n",
+		},
+		{
+			name: "runcommand finished without output",
+			ev: events.Event{Type: events.TypeRunCommandOutput, DeviceID: "d1", Payload: map[string]any{
+				"id": 7, "key": "lock", "status": "finished", "success": false, "output": "",
+			}},
+			want: "[d1] runcommand lock: failed\n",
+		},
+		{
 			name: "contacts vcards phase drops a zero skip count",
 			ev:   events.Event{Type: events.TypeContactsUpdated, DeviceID: "d1", Payload: map[string]any{"phase": "vcards", "stored": 4, "skipped": 0}},
 			want: "[d1] contacts: 4 saved\n",
@@ -267,6 +294,7 @@ func TestFormatEventSurvivesBadPayloads(t *testing.T) {
 	types := []events.EventType{
 		events.TypeBatteryUpdate, events.TypeBatteryThreshold, events.TypeNotification,
 		events.TypeSftpMount, events.TypeSftpMounted, events.TypeSftpUnmounted,
+		events.TypeRunCommandOutput,
 		events.TypePairAccepted, events.TypeMprisUpdate,
 		events.TypeSMSIncoming, events.TypeSMSAttachment, events.TypePingReceived,
 		events.TypeConnectivityUpdate, events.TypeTelephonyRinging, events.TypeTelephonyMissed,

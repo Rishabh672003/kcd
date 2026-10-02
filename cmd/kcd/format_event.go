@@ -19,6 +19,59 @@ func truncate(s string, max int) string {
 	return s
 }
 
+// runCommandLabel names the execution, falling back to the id when the plugin
+// published no key.
+func runCommandLabel(payload map[string]any) string {
+	if key := str(payload, "key"); key != "" {
+		return oneLine(truncate(key, 40))
+	}
+	return fmt.Sprintf("#%v", payload["id"])
+}
+
+// runCommandDetail renders one runcommand event body. A batch carries separate
+// stdout/stderr line lists; the lifecycle events carry a single `output`
+// transcript. Branching on status rather than probing for `success` matters:
+// an absent boolean would otherwise make a start look like a failure.
+func runCommandDetail(payload map[string]any) string {
+	if lines, ok := payload["stdout"].([]any); ok {
+		groups := make([]string, 0, 2)
+		if out := runCommandLines(lines, "out"); out != "" {
+			groups = append(groups, out)
+		}
+		if errOut := runCommandLines(payload["stderr"], "err"); errOut != "" {
+			groups = append(groups, errOut)
+		}
+		return strings.Join(groups, " | ")
+	}
+	if str(payload, "status") == "started" {
+		return "running"
+	}
+	if text := oneLine(truncate(str(payload, "output"), 200)); text != "" {
+		return text
+	}
+	if ok, _ := payload["success"].(bool); ok {
+		return "ok"
+	}
+	return "failed"
+}
+
+func runCommandLines(raw any, tag string) string {
+	lines, ok := raw.([]any)
+	if !ok || len(lines) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(lines))
+	for _, l := range lines {
+		if s, ok := l.(string); ok && s != "" {
+			parts = append(parts, tag+": "+oneLine(s))
+		}
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.Join(parts, " | ")
+}
+
 // oneLine collapses newlines so a multi-line message cannot break the stream's
 // line-per-event shape.
 func oneLine(s string) string {
@@ -196,6 +249,9 @@ func formatEvent(ev events.Event) string {
 			return fmt.Sprintf("[%s] volume: %s (muted)\n", ev.DeviceID, name)
 		}
 		return fmt.Sprintf("[%s] volume: %s %v%%\n", ev.DeviceID, name, payload["volume"])
+
+	case events.TypeRunCommandOutput:
+		return fmt.Sprintf("[%s] runcommand %s: %s\n", ev.DeviceID, runCommandLabel(payload), runCommandDetail(payload))
 
 	case events.TypeContactsUpdated:
 		if str(payload, "phase") == "vcards" {
