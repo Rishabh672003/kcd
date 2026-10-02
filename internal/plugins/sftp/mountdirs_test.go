@@ -172,7 +172,7 @@ func TestWarnFiresOnReusedMount(t *testing.T) {
 	p.mountPoints["dev1"] = hazardous
 
 	// Already mounted, so mountWithBody takes the reuse path.
-	if _, err := p.mountWithBody(context.Background(), "dev1", SftpBody{}, ""); err != nil {
+	if _, err := p.mountWithBody(context.Background(), "dev1", SftpBody{}, "", false); err != nil {
 		t.Fatalf("reuse path: %v", err)
 	}
 	if !p.warnedDirs[hazardous] {

@@ -75,6 +75,9 @@ type SFTPConfig struct {
 	AutoOpen               bool     `toml:"auto_open"`
 	OpenCommand            string   `toml:"open_command"`
 	ExtraSshfsOpts         []string `toml:"extra_sshfs_opts"`
+	// ReadOnly mounts the device's filesystem read-only by default. --ro on a
+	// single mount request overrides this either way.
+	ReadOnly bool `toml:"read_only"`
 }
 
 type PingConfig struct {

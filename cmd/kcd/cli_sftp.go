@@ -7,6 +7,37 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
+// readOnlyOverride maps the --ro/--no-ro flags onto the pointer the client
+// expects. Both flags absent leaves it nil, which means "use the daemon's
+// configured default" -- distinguishable from an explicit false, so an old
+// client cannot quietly turn a read-only default back into a writable mount.
+func readOnlyOverride(c *cli.Context) *bool {
+	switch {
+	case c.Bool("ro"):
+		v := true
+		return &v
+	case c.Bool("no-ro"):
+		v := false
+		return &v
+	default:
+		return nil
+	}
+}
+
+// readOnlyFlags is the flag pair shared by every command that can mount.
+func readOnlyFlags() []cli.Flag {
+	return []cli.Flag{
+		&cli.BoolFlag{
+			Name:  "ro",
+			Usage: "Mount read-only, so the phone's files cannot be deleted through it",
+		},
+		&cli.BoolFlag{
+			Name:  "no-ro",
+			Usage: "Mount writable even if `read_only = true` is set in [sftp]",
+		},
+	}
+}
+
 var sftpCmd = &cli.Command{
 	Name:  "sftp",
 	Usage: "Manage SFTP connections to a device",
@@ -25,7 +56,7 @@ The device responds with connection credentials on 'kcd watch'.`,
 				if err != nil {
 					return err
 				}
-				if err := cl.SftpMount(c.Args().First()); err != nil {
+				if err := cl.SftpMount(c.Args().First(), nil); err != nil {
 					return err
 				}
 				fmt.Println("SFTP mount requested. Run 'kcd sftp info' or 'kcd watch' to see details.")
@@ -136,6 +167,7 @@ Uses the multiPaths/pathNames fields from the cached SFTP credentials.`,
 			Description: `Send a request, wait for the phone to respond with credentials,
 mount the filesystem via sshfs, and open it in the default file manager.
 Requires sshfs to be installed.`,
+			Flags: readOnlyFlags(),
 			Action: func(c *cli.Context) error {
 				if c.NArg() < 1 {
 					return fmt.Errorf("missing device ID")
@@ -145,7 +177,7 @@ Requires sshfs to be installed.`,
 					return err
 				}
 				fmt.Println("Requesting SFTP credentials from phone (waiting up to 20s)…")
-				path, err := cl.SftpMountLocal(c.Args().First())
+				path, err := cl.SftpMountLocal(c.Args().First(), readOnlyOverride(c))
 				if err != nil {
 					return err
 				}
@@ -206,7 +238,7 @@ Examples:
 				}
 
 				fmt.Println("Requesting SFTP credentials from phone (waiting up to 20s)…")
-				path, volumes, err := cl.SftpBrowse(c.Args().First(), volume)
+				path, volumes, err := cl.SftpBrowse(c.Args().First(), volume, readOnlyOverride(c))
 				if err != nil {
 					return err
 				}

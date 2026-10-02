@@ -36,7 +36,7 @@ var sshHostPattern = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])
 // separator — unsupported by older sshfs 2.x) is what prevents option
 // injection: no validated value can begin with '-', so sshfs/fuse option
 // parsing can never reinterpret remoteRoot as a flag like -oProxyCommand.
-func buildSSHFSArgs(body SftpBody, remotePath, mountPoint string, uid, gid int, keepaliveInterval, keepaliveCount int, extraOpts []string) ([]string, error) {
+func buildSSHFSArgs(body SftpBody, remotePath, mountPoint string, uid, gid int, keepaliveInterval, keepaliveCount int, extraOpts []string, readOnly bool) ([]string, error) {
 	if !sshUserPattern.MatchString(body.User) || len(body.User) > 64 {
 		return nil, fmt.Errorf("sftp: refusing suspicious ssh user %q", body.User)
 	}
@@ -74,6 +74,12 @@ func buildSSHFSArgs(body SftpBody, remotePath, mountPoint string, uid, gid int, 
 		"-o", "gid=" + strconv.Itoa(gid),
 	}
 
+	// Read-only is set before ExtraSshfsOpts so an explicit operator override
+	// in the config can still force a writable mount.
+	if readOnly {
+		args = append(args, "-o", "ro")
+	}
+
 	// ExtraSshfsOpts comes from the local operator config, not the phone —
 	// passed through as-is.
 	for _, opt := range extraOpts {
@@ -108,7 +114,7 @@ func sshfsHint(msg string) string {
 // mountWithBody performs the sshfs mount and returns the local browse path.
 // volumePath specifies which storage volume to mount. If empty, the first
 // available volume is selected automatically.
-func (p *SftpPlugin) mountWithBody(ctx context.Context, deviceID string, body SftpBody, volumePath string) (string, error) {
+func (p *SftpPlugin) mountWithBody(ctx context.Context, deviceID string, body SftpBody, volumePath string, readOnly bool) (string, error) {
 	mountPoint := p.mountPointFor(deviceID)
 	// Warned before the reuse check as well as after it: a user who already
 	// has a mount at a hazardous location still needs telling, and it is
@@ -125,6 +131,16 @@ func (p *SftpPlugin) mountWithBody(ctx context.Context, deviceID string, body Sf
 			log.String("device_id", deviceID),
 			log.String("mount_point", existing),
 		)
+		// Mounting is idempotent, so a mode request cannot be applied to an
+		// existing mount. Say what the mount actually is rather than appearing
+		// to honour the flag.
+		if existingRO := p.mountIsReadOnly(deviceID); existingRO != readOnly {
+			p.logger.Info("read-only mode differs from the existing mount and cannot be changed in place; unmount first",
+				log.String("device_id", deviceID),
+				log.Bool("existing_read_only", existingRO),
+				log.Bool("requested_read_only", readOnly),
+			)
+		}
 		p.autoOpen(existing)
 		return existing, nil
 	}
@@ -148,7 +164,7 @@ func (p *SftpPlugin) mountWithBody(ctx context.Context, deviceID string, body Sf
 			remotePath = body.Path
 		}
 	}
-	args, err := buildSSHFSArgs(body, remotePath, mountPoint, os.Getuid(), os.Getgid(), p.cfg.KeepaliveIntervalSecs, p.cfg.KeepaliveCount, p.cfg.ExtraSshfsOpts)
+	args, err := buildSSHFSArgs(body, remotePath, mountPoint, os.Getuid(), os.Getgid(), p.cfg.KeepaliveIntervalSecs, p.cfg.KeepaliveCount, p.cfg.ExtraSshfsOpts, readOnly)
 	if err != nil {
 		_ = os.Remove(mountPoint)
 		return "", err
@@ -171,9 +187,11 @@ func (p *SftpPlugin) mountWithBody(ctx context.Context, deviceID string, body Sf
 	// directly to the mount point — no extra navigation needed.
 	browsePath := mountPoint
 
-	// Track the mount point so Unmount() can call fusermount.
+	// Track the mount point so Unmount() can call fusermount, and its mode so a
+	// later --ro request against this mount can report the truth.
 	p.mu.Lock()
 	p.mountPoints[deviceID] = mountPoint
+	p.mountReadOnly[deviceID] = readOnly
 	p.mu.Unlock()
 
 	// Find and track the sshfs daemon PID for graceful shutdown.
@@ -257,6 +275,14 @@ func (p *SftpPlugin) OnDisconnect(dev device.Sender) {
 	p.mu.Lock()
 	delete(p.lastBody, deviceID)
 	p.mu.Unlock()
+}
+
+// mountIsReadOnly reports whether the device's existing mount is read-only.
+// False for a mount kcd did not create or no longer tracks.
+func (p *SftpPlugin) mountIsReadOnly(deviceID string) bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.mountReadOnly[deviceID]
 }
 
 // Unmount cleanly unmounts a previously mounted SFTP filesystem.
@@ -404,6 +430,7 @@ func (p *SftpPlugin) finishUnmount(deviceID, mountPoint string) {
 	p.mu.Lock()
 	delete(p.mountPoints, deviceID)
 	delete(p.mountPIDs, deviceID)
+	delete(p.mountReadOnly, deviceID)
 	p.mu.Unlock()
 
 	_ = os.Remove(mountPoint)
@@ -420,6 +447,7 @@ func (p *SftpPlugin) removeLeftoverDir(deviceID, mountPoint string) bool {
 	p.mu.Lock()
 	delete(p.mountPoints, deviceID)
 	delete(p.mountPIDs, deviceID)
+	delete(p.mountReadOnly, deviceID)
 	p.mu.Unlock()
 	// Best effort: a non-empty or busy directory just stays, and the error
 	// above still tells the caller nothing is mounted.

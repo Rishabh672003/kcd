@@ -35,7 +35,7 @@ func TestMountWithBody_IsIdempotent(t *testing.T) {
 
 	body := SftpBody{IP: "192.168.1.42", Port: "1776", User: "u0_a123", Password: "x", Path: "/storage/emulated/0"}
 
-	got, err := p.mountWithBody(context.Background(), "dev1", body, "")
+	got, err := p.mountWithBody(context.Background(), "dev1", body, "", false)
 	if err != nil {
 		t.Fatalf("second mount should succeed by reusing the mount point, got: %v", err)
 	}
@@ -129,7 +129,7 @@ func TestMountStateEventsPublished(t *testing.T) {
 	// The idempotent path reuses the mount point without a state change, so it
 	// must not announce a transition that did not happen.
 	p.mountPoints["dev1"] = "/mnt/kcd-sftp-dev1"
-	if _, err := p.mountWithBody(context.Background(), "dev1", SftpBody{}, ""); err != nil {
+	if _, err := p.mountWithBody(context.Background(), "dev1", SftpBody{}, "", false); err != nil {
 		t.Fatalf("idempotent mount: %v", err)
 	}
 	select {

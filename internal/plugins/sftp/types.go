@@ -20,6 +20,9 @@ type SftpPlugin struct {
 	mu          sync.RWMutex
 	lastBody    map[string]SftpBody
 	mountPoints map[string]string // deviceID -> local mountPoint path
+	// mountReadOnly records the mode each mount was created with, so a later
+	// --ro request against an existing mount can report what it actually is.
+	mountReadOnly map[string]bool
 	// warnedDirs records mount directories the document-folder warning has
 	// already fired for, so it is logged once per location per run.
 	warnedDirs map[string]bool
@@ -28,12 +31,13 @@ type SftpPlugin struct {
 
 func NewSftpPlugin(cfg config.SFTPConfig, bus *events.Bus, logger log.Logger) *SftpPlugin {
 	return &SftpPlugin{
-		cfg:         cfg,
-		bus:         bus,
-		logger:      logger.With(log.String("plugin", "sftp")),
-		lastBody:    make(map[string]SftpBody),
-		mountPoints: make(map[string]string),
-		mountPIDs:   make(map[string]int),
+		cfg:           cfg,
+		bus:           bus,
+		logger:        logger.With(log.String("plugin", "sftp")),
+		lastBody:      make(map[string]SftpBody),
+		mountPoints:   make(map[string]string),
+		mountReadOnly: make(map[string]bool),
+		mountPIDs:     make(map[string]int),
 	}
 }
 

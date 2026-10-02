@@ -26,7 +26,7 @@ func (p *SftpPlugin) RequestMount(dev device.Sender) error {
 // RequestAndMount sends the SFTP request, waits for the Android device to
 // respond with credentials (up to 20 s), mounts the filesystem via sshfs,
 // and returns the local path the user should open.
-func (p *SftpPlugin) RequestAndMount(ctx context.Context, dev device.Sender) (string, error) {
+func (p *SftpPlugin) RequestAndMount(ctx context.Context, dev device.Sender, readOnly bool) (string, error) {
 	if p.bus == nil {
 		return "", fmt.Errorf("event bus not available")
 	}
@@ -63,7 +63,7 @@ func (p *SftpPlugin) RequestAndMount(ctx context.Context, dev device.Sender) (st
 			if !exists {
 				return "", fmt.Errorf("credentials missing after event (internal error)")
 			}
-			return p.mountWithBody(ctx, dev.ID(), body, "")
+			return p.mountWithBody(ctx, dev.ID(), body, "", readOnly)
 
 		case <-deadline.Done():
 			return "", fmt.Errorf("timed out after %s waiting for SFTP response — is the KDE Connect app open on the phone?", timeout)
@@ -75,7 +75,7 @@ func (p *SftpPlugin) RequestAndMount(ctx context.Context, dev device.Sender) (st
 // mounts the specified volume. If volumePath is empty, the available volumes
 // are returned without mounting (list mode). The caller is responsible for
 // closing the returned closer when done with the mounted path.
-func (p *SftpPlugin) RequestAndMountVolume(ctx context.Context, dev device.Sender, volumePath string) (mountPath string, volumes []StorageVolume, err error) {
+func (p *SftpPlugin) RequestAndMountVolume(ctx context.Context, dev device.Sender, volumePath string, readOnly bool) (mountPath string, volumes []StorageVolume, err error) {
 	if p.bus == nil {
 		return "", nil, fmt.Errorf("event bus not available")
 	}
@@ -118,7 +118,7 @@ func (p *SftpPlugin) RequestAndMountVolume(ctx context.Context, dev device.Sende
 				return "", vols, nil
 			}
 
-			path, err := p.mountWithBody(ctx, dev.ID(), body, volumePath)
+			path, err := p.mountWithBody(ctx, dev.ID(), body, volumePath, readOnly)
 			if err != nil {
 				return "", nil, err
 			}
@@ -132,14 +132,14 @@ func (p *SftpPlugin) RequestAndMountVolume(ctx context.Context, dev device.Sende
 
 // MountLocally mounts using previously cached credentials.
 // Prefer RequestAndMount for a one-step experience.
-func (p *SftpPlugin) MountLocally(ctx context.Context, deviceID string) (string, error) {
+func (p *SftpPlugin) MountLocally(ctx context.Context, deviceID string, readOnly bool) (string, error) {
 	p.mu.RLock()
 	body, ok := p.lastBody[deviceID]
 	p.mu.RUnlock()
 	if !ok {
 		return "", fmt.Errorf("no SFTP credentials cached for device %s — use 'kcd sftp mount' which requests them automatically", deviceID)
 	}
-	return p.mountWithBody(ctx, deviceID, body, "")
+	return p.mountWithBody(ctx, deviceID, body, "", readOnly)
 }
 
 // Info returns the cached SFTP connection details for a device.
@@ -260,4 +260,10 @@ func (p *SftpPlugin) adoptIfMounted(deviceID, mountPoint string) string {
 // IsMounted reports whether a device's filesystem is currently mounted.
 func (p *SftpPlugin) IsMounted(deviceID string) bool {
 	return p.MountedPath(deviceID) != ""
+}
+
+// ReadOnlyByDefault reports the configured read-only default, used when a
+// mount request does not override it.
+func (p *SftpPlugin) ReadOnlyByDefault() bool {
+	return p.cfg.ReadOnly
 }

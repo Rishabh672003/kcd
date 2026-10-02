@@ -200,10 +200,22 @@ type StorageVolumeResponse struct {
 	Path string `json:"path"`
 }
 
+// SftpMountPayload is used for CmdSftpMount and CmdSftpMountLocal.
+//
+// ReadOnly overrides the [sftp] read_only default for this one mount. It has
+// to be a pointer so an absent field is distinguishable from an explicit
+// false, letting the daemon fall back to config rather than silently forcing
+// a writable mount.
+type SftpMountPayload struct {
+	DeviceID string `json:"deviceId"`
+	ReadOnly *bool  `json:"readOnly,omitempty"`
+}
+
 // SftpBrowsePayload is used for CmdSftpBrowse.
 type SftpBrowsePayload struct {
 	DeviceID string `json:"deviceId"`
 	Volume   string `json:"volume,omitempty"`
+	ReadOnly *bool  `json:"readOnly,omitempty"`
 }
 
 // SftpBrowseResponse is returned by CmdSftpBrowse.

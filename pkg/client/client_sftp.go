@@ -7,8 +7,12 @@ import (
 )
 
 // SftpMount requests the daemon to initiate an SFTP connection to the remote device.
-func (c *Client) SftpMount(deviceID string) error {
-	_, err := c.Call(ipc.CmdSftpMount, ipc.DevicePayload{DeviceID: deviceID})
+//
+// readOnly overrides the daemon's [sftp] read_only default for this request.
+// Pass a pointer to true for --ro, a pointer to false to force writable, or
+// nil to use the configured default.
+func (c *Client) SftpMount(deviceID string, readOnly *bool) error {
+	_, err := c.Call(ipc.CmdSftpMount, ipc.SftpMountPayload{DeviceID: deviceID, ReadOnly: readOnly})
 	return err
 }
 
@@ -44,8 +48,8 @@ func (c *Client) SftpVolumes(deviceID string) ([]ipc.StorageVolumeResponse, erro
 // SftpMountLocal requests the daemon to request SFTP credentials from the
 // phone, wait for the response, mount via sshfs, and open the result in
 // the default file manager. Returns the local browse path on success.
-func (c *Client) SftpMountLocal(deviceID string) (string, error) {
-	resp, err := c.Call(ipc.CmdSftpMountLocal, ipc.DevicePayload{DeviceID: deviceID})
+func (c *Client) SftpMountLocal(deviceID string, readOnly *bool) (string, error) {
+	resp, err := c.Call(ipc.CmdSftpMountLocal, ipc.SftpMountPayload{DeviceID: deviceID, ReadOnly: readOnly})
 	if err != nil {
 		return "", err
 	}
@@ -68,10 +72,11 @@ func (c *Client) SftpUnmount(deviceID string) error {
 // available volumes (volume arg empty) or mounts the specified volume.
 // volume can be an index (0-based), volume name, or path.
 // Returns the mount path (empty if listing) and available volumes.
-func (c *Client) SftpBrowse(deviceID string, volume string) (string, []ipc.StorageVolumeResponse, error) {
+func (c *Client) SftpBrowse(deviceID string, volume string, readOnly *bool) (string, []ipc.StorageVolumeResponse, error) {
 	resp, err := c.Call(ipc.CmdSftpBrowse, ipc.SftpBrowsePayload{
 		DeviceID: deviceID,
 		Volume:   volume,
+		ReadOnly: readOnly,
 	})
 	if err != nil {
 		return "", nil, err
