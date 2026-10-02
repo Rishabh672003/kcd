@@ -88,13 +88,29 @@ func (p *SftpPlugin) Timeout() time.Duration  { return 5 * time.Second }
 func (p *SftpPlugin) IncomingTypes() []string { return []string{"kdeconnect.sftp"} }
 func (p *SftpPlugin) OutgoingTypes() []string { return []string{"kdeconnect.sftp.request"} }
 
-// mountPointFor is the one mount path the daemon ever uses for a device.
+// mountPointFor is the one mount path the daemon creates for a device.
 // Derived rather than looked up, so it still identifies leftovers when the
 // cache is empty -- which is exactly the state after a restart.
+//
+// An empty MountDir falls back to the same default config.Defaults() uses,
+// rather than to a temp directory: the daemon never writes the config file,
+// so `mount_dir = ""` is an explicit request for the default, not a way to
+// ask for somewhere that gets swept up by periodic tmp cleaning.
 func (p *SftpPlugin) mountPointFor(deviceID string) string {
 	baseDir := p.cfg.MountDir
 	if baseDir == "" {
-		baseDir = os.TempDir()
+		baseDir = config.DefaultMountDir()
 	}
 	return filepath.Join(baseDir, "kcd-sftp-"+deviceID)
+}
+
+// legacyMountPointFor is where mounts lived before the default moved out of
+// ~/Downloads. Mounts there outlive the daemon, so Unmount has to keep being
+// able to find and release them.
+func legacyMountPointFor(deviceID string) string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, "Downloads", "kcd", "mnt", "kcd-sftp-"+deviceID)
 }

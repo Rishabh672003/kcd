@@ -3,7 +3,6 @@ package sftp
 import (
 	"bufio"
 	"os"
-	"path/filepath"
 	"strings"
 )
 
@@ -24,13 +23,6 @@ var mountTablePath = "/proc/mounts"
 // the kernel as the source of truth and the map as a cache makes that
 // recoverable without persisting anything -- which is what we want, since a
 // persisted entry would go stale after a crash and need reconciling anyway.
-func liveMountPoint(deviceID string) (string, bool) {
-	want := "kcd-sftp-" + deviceID
-	return eachMount(func(mountPoint string) bool {
-		return filepath.Base(mountPoint) == want
-	})
-}
-
 // mountExists reports whether the kernel currently has a FUSE mount at this
 // exact path. Unmount uses it to tell "nothing is mounted" apart from "the
 // release failed", which are very different outcomes for a caller.

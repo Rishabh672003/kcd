@@ -223,15 +223,34 @@ func (p *SftpPlugin) MountedPath(deviceID string) string {
 		return mountPoint
 	}
 
-	mountPoint, live := liveMountPoint(deviceID)
-	if !live {
+	// The kernel is the source of truth. The configured location first, then
+	// the location mounts used to default to, so a mount made before the
+	// default moved is still found rather than orphaned.
+	if mountPoint = p.adoptIfMounted(deviceID, p.mountPointFor(deviceID)); mountPoint != "" {
+		return mountPoint
+	}
+	if legacy := legacyMountPointFor(deviceID); legacy != "" && legacy != p.mountPointFor(deviceID) {
+		if mountPoint = p.adoptIfMounted(deviceID, legacy); mountPoint != "" {
+			p.logger.Info("adopted SFTP mount left at the previous default location",
+				log.String("device_id", deviceID),
+				log.String("mount_point", mountPoint),
+			)
+			return mountPoint
+		}
+	}
+	return ""
+}
+
+// adoptIfMounted caches mountPoint as this device's mount when the kernel
+// reports it, and returns it; otherwise returns "".
+func (p *SftpPlugin) adoptIfMounted(deviceID, mountPoint string) string {
+	if !mountExists(mountPoint) {
 		return ""
 	}
-	// Adopt it, so later calls hit the cache and Unmount knows the path.
 	p.mu.Lock()
 	p.mountPoints[deviceID] = mountPoint
 	p.mu.Unlock()
-	p.logger.Info("adopted SFTP mount left by a previous daemon session",
+	p.logger.Debug("adopted SFTP mount left by a previous daemon session",
 		log.String("device_id", deviceID),
 		log.String("mount_point", mountPoint),
 	)
