@@ -17,17 +17,15 @@ steps {
     ["trailing_whitespace"] = Builtins.trailing_whitespace
 }
 
-// The repo ships shell scripts and GitHub workflows that nothing currently
-// checks. These are worth having, but the tools are not installed and CI does
-// not run them, so they stay opt-in: `hk check --profile shell`.
+// The repo ships shell scripts and GitHub workflows that nothing checks: CI
+// runs no shell tooling, and the tools are not pinned in mise.toml, so there is
+// nowhere for them to come from. Listing them here would make `hk check
+// --profile shell` look configured while failing on missing tools and reporting
+// nothing about the code, so they are declared only when actually available.
 //
-// Promote one to the default set once its tool is added to mise.toml and CI.
+// go_vuln_check is kept behind the "slow" profile: it works, it just takes long
+// enough that it should not run on every commit.
 local extra = new Mapping<String, Step> {
-    ["shellcheck"] = (Builtins.shellcheck) { profiles = List("shell") }
-    ["shellharden"] = (Builtins.shellharden) { profiles = List("shell") }
-    ["shfmt"] = (Builtins.shfmt) { profiles = List("shell") }
-    ["actionlint"] = (Builtins.actionlint) { profiles = List("shell") }
-    ["zizmor"] = (Builtins.zizmor) { profiles = List("shell") }
     ["go_vuln_check"] = (Builtins.go_vuln_check) { profiles = List("slow") }
 }
 

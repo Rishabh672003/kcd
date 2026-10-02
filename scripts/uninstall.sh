@@ -146,18 +146,93 @@ else
   skip "Nautilus extension not installed"
 fi
 
+# ── Safe recursive delete ──────────────────────────────────────────────────────
+# rm descends into nested filesystems by default, so a live SFTP mount inside
+# one of these directories would be traversed and the phone's files deleted.
+# --one-file-system makes rm stop at the filesystem boundary instead
+# (coreutils >= 8.30 spells it long, BusyBox uses -x).
+#
+# Probed rather than assumed: on an older coreutils the unrecognized option
+# would abort the script under `set -euo pipefail`, leaving a half-uninstalled
+# system rather than a merely un-uninstalled one.
+if rm --help 2>&1 | grep -q -- '--one-file-system'; then
+  KCD_RM_ONE_FS=(--one-file-system)
+elif rm --help 2>&1 | grep -qE -- '(^|[[:space:]])-x([[:space:],]|$)'; then
+  KCD_RM_ONE_FS=(-x)
+else
+  KCD_RM_ONE_FS=()
+fi
+
+# _rm_rf removes directories without crossing a filesystem boundary when rm
+# supports it.
+_rm_rf() {
+  rm "${KCD_RM_ONE_FS[@]+"${KCD_RM_ONE_FS[@]}"}" -rf "$@"
+}
+
+# _is_mountpoint reports whether a directory is itself a mount point.
+# Compared by device id, since a mount sits on a different st_dev than its
+# parent. This avoids depending on findmnt or mountpoint, which nothing else in
+# these scripts uses.
+_is_mountpoint() {
+  local dir="$1" parent dev_dir dev_parent
+  [ -d "${dir}" ] || return 1
+  parent="$(dirname -- "${dir}")"
+  [ -d "${parent}" ] || return 1
+  dev_dir="$(stat -c %d -- "${dir}" 2>/dev/null)" || return 1
+  dev_parent="$(stat -c %d -- "${parent}" 2>/dev/null)" || return 1
+  [ "${dev_dir}" != "${dev_parent}" ]
+}
+
+# _live_sftp_mounts prints any SFTP mount point that is still mounted, under
+# the current location or the pre-v1.22 one. Unmounting is the daemon's job, but
+# a mount can outlive it -- an unclean shutdown, a crash, or a device id the
+# daemon no longer knows -- and this is the last chance to notice.
+_live_sftp_mounts() {
+  local base dir found=""
+  for base in "${STATE_DIR}/mnt" "${HOME}/Downloads/kcd/mnt"; do
+    [ -d "${base}" ] || continue
+    for dir in "${base}"/kcd-sftp-*; do
+      [ -d "${dir}" ] || continue
+      # The glob also matches the literal parent when nothing is there.
+      case "$(basename -- "${dir}")" in
+      kcd-sftp-?*) ;;
+      *) continue ;;
+      esac
+      if _is_mountpoint "${dir}"; then
+        found="${found}${dir}"$'\n'
+      fi
+    done
+  done
+  printf '%s' "${found}"
+}
+
 # ── Config and state ──────────────────────────────────────────────────────────
 step "Configuration and state"
 
 _remove_data() {
-  local removed=false
+  local removed=false live
+
+  # Without a boundary-aware rm there is no safe way to delete a directory that
+  # still contains a live mount, so refuse rather than delete through it.
+  if [ "${#KCD_RM_ONE_FS[@]}" -eq 0 ]; then
+    live="$(_live_sftp_mounts)"
+    if [ -n "${live}" ]; then
+      warn "This system's rm has no --one-file-system, so refusing to delete."
+      warn "Unmount the SFTP mount(s) first, then re-run:"
+      while IFS= read -r mount_point; do
+        [ -n "${mount_point}" ] && warn "  kcd sftp unmount <device-id>   # ${mount_point}"
+      done <<<"${live}"
+      return 1
+    fi
+  fi
+
   if [[ -d "${CONFIG_DIR}" ]]; then
-    rm -rf "${CONFIG_DIR}"
+    _rm_rf "${CONFIG_DIR}"
     success "Removed ${CONFIG_DIR}"
     removed=true
   fi
   if [[ -d "${STATE_DIR}" ]]; then
-    rm -rf "${STATE_DIR}"
+    _rm_rf "${STATE_DIR}"
     success "Removed ${STATE_DIR}  (paired device fingerprints deleted)"
     removed=true
   fi
@@ -186,7 +261,14 @@ else
     skip "Config and state preserved"
     printf "\n"
     printf "  ${BLUE}Tip:${RESET} To remove later, run:\n"
-    printf "    rm -rf ${CONFIG_DIR} ${STATE_DIR}\n"
+    # Print the boundary-aware form this system actually supports, rather than a
+    # bare `rm -rf` that would descend into a live SFTP mount.
+    printf "    rm${KCD_RM_ONE_FS[*]:+ ${KCD_RM_ONE_FS[*]}} -rf %s %s\n" \
+      "${CONFIG_DIR}" "${STATE_DIR}"
+    if [[ "${#KCD_RM_ONE_FS[@]}" -eq 0 ]]; then
+      printf "  ${YELLOW}Note:${RESET} this system's rm has no --one-file-system, so\n"
+      printf "  unmount any kcd SFTP mount before deleting by hand.\n"
+    fi
   fi
 fi
 
