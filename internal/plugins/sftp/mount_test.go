@@ -56,30 +56,6 @@ func TestUnmount_NotMountedIsDistinguishable(t *testing.T) {
 	}
 }
 
-func TestUnmount_KeepsStateWhenFusermountFails(t *testing.T) {
-	dir := t.TempDir()
-	p := newTestPlugin(t, dir)
-
-	mountPoint := filepath.Join(dir, "kcd-sftp-dev1")
-	if err := os.MkdirAll(mountPoint, 0700); err != nil {
-		t.Fatal(err)
-	}
-	p.mountPoints["dev1"] = mountPoint
-
-	// No sshfs process is running for this path, so fusermount has nothing to
-	// release and fails. Tracked state must survive so the caller can retry.
-	err := p.Unmount("dev1")
-	if err == nil {
-		t.Skip("fusermount succeeded on a path that was never mounted; cannot exercise the failure path")
-	}
-	if !strings.Contains(err.Error(), "could not be released") {
-		t.Errorf("error should name the stale mount and the failing tool, got: %v", err)
-	}
-	if _, stillTracked := p.mountPoints["dev1"]; !stillTracked {
-		t.Error("mount state was dropped even though the unmount failed; the daemon would claim unmounted while the FUSE mount is live")
-	}
-}
-
 func TestSshfsHint(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -196,5 +172,83 @@ func TestInfoReportsMountState(t *testing.T) {
 	}
 	if info.MountPoint != "/mnt/kcd-sftp-dev1" {
 		t.Errorf("MountPoint = %q, want /mnt/kcd-sftp-dev1", info.MountPoint)
+	}
+}
+
+// The reported bug: the daemon still had a device cached as mounted, but the
+// kernel had no such mount, so fusermount failed with "not found in
+// /etc/mtab" forever. Keeping the cached state on failure -- correct for a
+// mount that really is still there -- meant this state could never clear,
+// leaving the device unable to mount or unmount again.
+func TestUnmount_ClearsStateWhenKernelHasNoMount(t *testing.T) {
+	dir := t.TempDir()
+	useFakeMountTable(t, "proc /proc proc rw 0 0\n")
+
+	p := newTestPlugin(t, dir)
+	mountPoint := filepath.Join(dir, "kcd-sftp-dev1")
+	if err := os.MkdirAll(mountPoint, 0700); err != nil {
+		t.Fatal(err)
+	}
+	p.mountPoints["dev1"] = mountPoint
+
+	if err := p.Unmount("dev1"); err != nil {
+		t.Fatalf("unmounting a mount the kernel already dropped must succeed, got: %v", err)
+	}
+	if _, cached := p.mountPoints["dev1"]; cached {
+		t.Error("cached state survived; the device stays wedged as mounted")
+	}
+	if _, err := os.Stat(mountPoint); !os.IsNotExist(err) {
+		t.Error("leftover mount directory was not removed")
+	}
+	if p.MountedPath("dev1") != "" {
+		t.Error("MountedPath still reports the device as mounted")
+	}
+}
+
+// With an empty cache and nothing in the kernel, a leftover directory from an
+// earlier release should still be cleaned up.
+func TestUnmount_RemovesLeftoverDirectoryWithoutCache(t *testing.T) {
+	dir := t.TempDir()
+	useFakeMountTable(t, "proc /proc proc rw 0 0\n")
+
+	p := newTestPlugin(t, dir)
+	leftover := filepath.Join(dir, "kcd-sftp-dev1")
+	if err := os.MkdirAll(leftover, 0700); err != nil {
+		t.Fatal(err)
+	}
+
+	err := p.Unmount("dev1")
+	if err == nil || !strings.Contains(err.Error(), "not mounted") {
+		t.Errorf("want a 'not mounted' error, got: %v", err)
+	}
+	if _, statErr := os.Stat(leftover); !os.IsNotExist(statErr) {
+		t.Error("leftover directory survived; it will block the next mount's MkdirAll forever")
+	}
+}
+
+// A genuinely live mount must still be released through fusermount, and the
+// normal path must not be short-circuited by the new kernel check.
+func TestUnmount_LiveMountTakesTheReleasePath(t *testing.T) {
+	dir := t.TempDir()
+	mountPoint := filepath.Join(dir, "kcd-sftp-dev1")
+	if err := os.MkdirAll(mountPoint, 0700); err != nil {
+		t.Fatal(err)
+	}
+
+	// Present in the kernel's view, so the release path runs. Nothing is
+	// actually mounted here, so fusermount will fail -- the point is that we
+	// got as far as trying it and then kept the state, because the mount is
+	// (as far as we can tell) still there.
+	useFakeMountTable(t, "phone:/storage/emulated/0 "+mountPoint+" fuse.sshfs rw 0 0\n")
+
+	p := newTestPlugin(t, dir)
+	p.mountPoints["dev1"] = mountPoint
+
+	err := p.Unmount("dev1")
+	if err != nil && !strings.Contains(err.Error(), "could not be released") {
+		t.Errorf("unexpected error shape: %v", err)
+	}
+	if _, cached := p.mountPoints["dev1"]; !cached {
+		t.Error("state was dropped for a mount the kernel still reports; it should stay retryable")
 	}
 }

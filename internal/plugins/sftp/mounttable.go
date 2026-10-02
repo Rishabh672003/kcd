@@ -25,27 +25,43 @@ var mountTablePath = "/proc/mounts"
 // recoverable without persisting anything -- which is what we want, since a
 // persisted entry would go stale after a crash and need reconciling anyway.
 func liveMountPoint(deviceID string) (string, bool) {
+	want := "kcd-sftp-" + deviceID
+	return eachMount(func(mountPoint string) bool {
+		return filepath.Base(mountPoint) == want
+	})
+}
+
+// mountExists reports whether the kernel currently has a FUSE mount at this
+// exact path. Unmount uses it to tell "nothing is mounted" apart from "the
+// release failed", which are very different outcomes for a caller.
+func mountExists(path string) bool {
+	_, found := eachMount(func(mountPoint string) bool { return mountPoint == path })
+	return found
+}
+
+// eachMount returns the first FUSE mount for which match reports true, and
+// whether any matched.
+//
+// FUSE-only on purpose: the daemon only ever creates `kcd-sftp-<deviceID>`
+// mounts via sshfs, so adopting an unrelated mount that happens to share the
+// name — and later running fusermount against it — would be worse than not
+// adopting it.
+func eachMount(match func(mountPoint string) bool) (string, bool) {
 	f, err := os.Open(mountTablePath)
 	if err != nil {
 		return "", false
 	}
 	defer f.Close()
 
-	// The daemon only ever creates mounts named after the device, so the
-	// basename is already specific to us; the fstype check keeps an unrelated
-	// mount that happens to share the name from being adopted.
-	want := "kcd-sftp-" + deviceID
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		fields := strings.Fields(scanner.Text())
-		if len(fields) < 3 {
+		if len(fields) < 3 || !strings.HasPrefix(fields[2], "fuse") {
 			continue
 		}
-		if !strings.HasPrefix(fields[2], "fuse") {
-			continue
-		}
-		if filepath.Base(unescapeMountPath(fields[1])) == want {
-			return unescapeMountPath(fields[1]), true
+		mountPoint := unescapeMountPath(fields[1])
+		if match(mountPoint) {
+			return mountPoint, true
 		}
 	}
 	return "", false

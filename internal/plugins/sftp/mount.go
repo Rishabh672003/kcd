@@ -122,11 +122,7 @@ func (p *SftpPlugin) mountWithBody(ctx context.Context, deviceID string, body Sf
 		return existing, nil
 	}
 
-	baseDir := p.cfg.MountDir
-	if baseDir == "" {
-		baseDir = os.TempDir()
-	}
-	mountPoint := filepath.Join(baseDir, "kcd-sftp-"+deviceID)
+	mountPoint := p.mountPointFor(deviceID)
 	if err := os.MkdirAll(mountPoint, 0700); err != nil {
 		return "", fmt.Errorf("create mount point %s: %w", mountPoint, err)
 	}
@@ -273,7 +269,30 @@ func (p *SftpPlugin) Unmount(deviceID string) error {
 	// to clear it.
 	mountPoint := p.MountedPath(deviceID)
 	if mountPoint == "" {
+		// Nothing mounted. A leftover directory can still be sitting there
+		// from a mount whose release already succeeded, so clear it and report
+		// the state the caller asked for rather than an error.
+		if leftover := p.mountPointFor(deviceID); p.removeLeftoverDir(deviceID, leftover) {
+			p.logger.Info("removed leftover SFTP mount directory",
+				log.String("device_id", deviceID),
+				log.String("mount_point", leftover),
+			)
+		}
 		return fmt.Errorf("not mounted: no SFTP mount for device %s", deviceID)
+	}
+
+	// The kernel is the source of truth. A mount that has already gone -- the
+	// FUSE connection died, or it was released by hand -- has nothing to
+	// release, and fusermount will fail on it forever. Treating that as an
+	// error while keeping the cached state would wedge the device permanently
+	// in "mounted", unable to mount or unmount again.
+	if !mountExists(mountPoint) {
+		p.logger.Info("SFTP mount already released, clearing stale state",
+			log.String("device_id", deviceID),
+			log.String("mount_point", mountPoint),
+		)
+		p.finishUnmount(deviceID, mountPoint)
+		return nil
 	}
 
 	p.mu.RLock()
@@ -320,23 +339,62 @@ func (p *SftpPlugin) Unmount(deviceID string) error {
 	}
 	unmountCtx, unmountCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer unmountCancel()
-	if out, err := plugin.RunCommandSync(unmountCtx, tool, "-u", mountPoint); err != nil {
-		// Keep the tracked state: the sshfs process is already gone, but the
-		// FUSE mount point may still be held, and the caller needs a retry to
-		// clear it.
-		detail := strings.TrimSpace(string(out))
-		if detail != "" {
-			detail = ": " + detail
-		}
-		p.logger.Warn("fusermount failed",
-			log.String("mount_point", mountPoint),
-			log.Error(err),
-			log.String("output", strings.TrimSpace(string(out))),
-		)
-		return fmt.Errorf("stale SFTP mount at %s could not be released, %s failed: %v%s",
-			mountPoint, tool, err, detail)
+	out, err := plugin.RunCommandSync(unmountCtx, tool, "-u", mountPoint)
+	if err == nil {
+		p.finishUnmount(deviceID, mountPoint)
+		return nil
 	}
 
+	detail := strings.TrimSpace(string(out))
+
+	// It may have gone while we were killing the sshfs process.
+	if !mountExists(mountPoint) {
+		p.logger.Info("SFTP mount released during unmount",
+			log.String("mount_point", mountPoint),
+			log.String("output", detail),
+		)
+		p.finishUnmount(deviceID, mountPoint)
+		return nil
+	}
+
+	// Still present but not responding: a dead FUSE connection refuses a
+	// normal unmount ("Transport endpoint is not connected"). A lazy unmount
+	// detaches it anyway, and any process still inside will see ENOTCONN
+	// rather than hang, which is the state a crashed mount is in regardless.
+	if strings.Contains(detail, "Transport endpoint is not connected") {
+		lazyOut, lazyErr := plugin.RunCommandSync(unmountCtx, tool, "-uz", mountPoint)
+		if lazyErr == nil {
+			p.logger.Info("SFTP mount force-detached with a lazy unmount",
+				log.String("mount_point", mountPoint),
+			)
+			p.finishUnmount(deviceID, mountPoint)
+			return nil
+		}
+		p.logger.Warn("lazy unmount failed",
+			log.String("mount_point", mountPoint),
+			log.Error(lazyErr),
+			log.String("output", strings.TrimSpace(string(lazyOut))),
+		)
+		detail = detail + " (lazy unmount also failed: " + strings.TrimSpace(string(lazyOut)) + ")"
+	}
+
+	// Keep the tracked state: the mount is genuinely still there, and the
+	// caller needs a retry to clear it.
+	p.logger.Warn("fusermount failed",
+		log.String("mount_point", mountPoint),
+		log.Error(err),
+		log.String("output", detail),
+	)
+	if detail != "" {
+		detail = ": " + detail
+	}
+	return fmt.Errorf("stale SFTP mount at %s could not be released, %s failed: %v%s",
+		mountPoint, tool, err, detail)
+}
+
+// finishUnmount clears tracked state and removes the mount directory. Called
+// once the mount is confirmed released.
+func (p *SftpPlugin) finishUnmount(deviceID, mountPoint string) {
 	p.mu.Lock()
 	delete(p.mountPoints, deviceID)
 	delete(p.mountPIDs, deviceID)
@@ -345,7 +403,21 @@ func (p *SftpPlugin) Unmount(deviceID string) error {
 	_ = os.Remove(mountPoint)
 	p.logger.Info("SFTP unmounted", log.String("mount_point", mountPoint))
 	p.publishUnmounted(deviceID, mountPoint)
-	return nil
+}
+
+// removeLeftoverDir removes a mount directory left behind by a mount that is
+// no longer in the kernel, reporting whether there was one.
+func (p *SftpPlugin) removeLeftoverDir(deviceID, mountPoint string) bool {
+	if _, err := os.Stat(mountPoint); err != nil {
+		return false
+	}
+	p.mu.Lock()
+	delete(p.mountPoints, deviceID)
+	delete(p.mountPIDs, deviceID)
+	p.mu.Unlock()
+	// Best effort: a non-empty or busy directory just stays, and the error
+	// above still tells the caller nothing is mounted.
+	return os.Remove(mountPoint) == nil
 }
 
 // findSSHFSPID scans /proc to find the sshfs daemon PID for a given mount point.

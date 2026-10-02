@@ -2,6 +2,8 @@ package sftp
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -85,3 +87,14 @@ func (p *SftpPlugin) Name() string            { return "SFTP" }
 func (p *SftpPlugin) Timeout() time.Duration  { return 5 * time.Second }
 func (p *SftpPlugin) IncomingTypes() []string { return []string{"kdeconnect.sftp"} }
 func (p *SftpPlugin) OutgoingTypes() []string { return []string{"kdeconnect.sftp.request"} }
+
+// mountPointFor is the one mount path the daemon ever uses for a device.
+// Derived rather than looked up, so it still identifies leftovers when the
+// cache is empty -- which is exactly the state after a restart.
+func (p *SftpPlugin) mountPointFor(deviceID string) string {
+	baseDir := p.cfg.MountDir
+	if baseDir == "" {
+		baseDir = os.TempDir()
+	}
+	return filepath.Join(baseDir, "kcd-sftp-"+deviceID)
+}

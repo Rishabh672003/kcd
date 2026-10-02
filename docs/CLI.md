@@ -787,9 +787,15 @@ to each:
 
 | Error contains | Meaning |
 |---|---|
-| `not mounted` | The daemon has no mount for this device |
-| `stale SFTP mount at <path> could not be released` | The mount exists but `fusermount` failed; retry, or unmount by path |
+| `not mounted` | Nothing is mounted for this device. Any leftover mount directory was removed as part of this |
+| `stale SFTP mount at <path> could not be released` | The mount is still in the kernel but `fusermount` could not detach it; retry, or unmount by path |
 | _(none)_ | Unmounted cleanly |
+
+Unmount is idempotent. A mount that has already gone — its FUSE connection
+died, or it was released by hand — is reported as unmounted and the daemon
+forgets it, rather than retrying forever against a mount that no longer
+exists. A mount that is still present but unresponsive is retried with a lazy
+unmount, which detaches it.
 
 Mounts survive a daemon restart. The daemon treats the kernel's mount table
 as the source of truth and its own record as a cache, so a mount made before a
