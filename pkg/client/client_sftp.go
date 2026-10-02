@@ -13,8 +13,11 @@ func (c *Client) SftpMount(deviceID string) error {
 }
 
 // SftpInfo returns the cached SFTP connection details for a device.
-func (c *Client) SftpInfo(deviceID string) (*ipc.SftpInfoResponse, error) {
-	resp, err := c.Call(ipc.CmdSftpInfo, ipc.DevicePayload{DeviceID: deviceID})
+//
+// The password is a live credential for the phone's SFTP server and is only
+// returned when showPassword is true; otherwise the daemon omits it.
+func (c *Client) SftpInfo(deviceID string, showPassword bool) (*ipc.SftpInfoResponse, error) {
+	resp, err := c.Call(ipc.CmdSftpInfo, ipc.SftpInfoPayload{DeviceID: deviceID, ShowPassword: showPassword})
 	if err != nil {
 		return nil, err
 	}

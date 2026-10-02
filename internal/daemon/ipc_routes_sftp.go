@@ -49,9 +49,9 @@ func resolveVolume(arg string, volumes []ipc.StorageVolumeResponse) string {
 
 func registerSftpRoutes(handler *ipc.Handler, devices *device.Registry, plugins *plugin.Registry) {
 	handler.Register(ipc.CmdSftpInfo, func(req ipc.Request) ipc.Response {
-		var p ipc.DevicePayload
+		var p ipc.SftpInfoPayload
 		return pluginRoute(req, &p, plugins, "SFTP", func(pl plugin.Plugin) ipc.Response {
-			info := pl.(*sftp.SftpPlugin).Info(p.DeviceID)
+			info := pl.(*sftp.SftpPlugin).Info(p.DeviceID, p.ShowPassword)
 			if info == nil {
 				return ipc.Response{OK: false, Error: "no SFTP credentials cached for this device — use 'kcd sftp request' first"}
 			}

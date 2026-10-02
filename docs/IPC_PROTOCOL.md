@@ -533,8 +533,13 @@ Get SFTP connection details for a device.
 **Request payload:**
 
 ```json
-{"deviceId": "a1b2c3d4e5f6_..."}
+{"deviceId": "a1b2c3d4e5f6_...", "showPassword": false}
 ```
+
+`showPassword` is optional and defaults to `false`. The password is a working
+credential for the phone's SFTP server, so the daemon omits the field entirely
+unless the client asks for it. A client that needs the credentials to mount
+can take them from the `sftp.mount` event instead, which always carries them.
 
 **Response data:** `SftpInfo`
 

@@ -144,7 +144,13 @@ func (p *SftpPlugin) MountLocally(ctx context.Context, deviceID string) (string,
 
 // Info returns the cached SFTP connection details for a device.
 // Returns nil if no credentials have been received yet.
-func (p *SftpPlugin) Info(deviceID string) *SftpInfo {
+//
+// includePassword gates the credential: it is a working password for the
+// phone's SFTP server, and `kcd sftp info` is an informational command whose
+// output routinely lands in scrollback, logs and $(...) captures. Callers that
+// genuinely need it (mounting) get credentials from the sftp.mount event
+// instead, which is unaffected by this gate.
+func (p *SftpPlugin) Info(deviceID string, includePassword bool) *SftpInfo {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	body, ok := p.lastBody[deviceID]
@@ -152,11 +158,13 @@ func (p *SftpPlugin) Info(deviceID string) *SftpInfo {
 		return nil
 	}
 	info := &SftpInfo{
-		IP:       body.IP,
-		Port:     body.Port,
-		User:     body.User,
-		Password: body.Password,
-		Path:     body.Path,
+		IP:   body.IP,
+		Port: body.Port,
+		User: body.User,
+		Path: body.Path,
+	}
+	if includePassword {
+		info.Password = body.Password
 	}
 	for i, mp := range body.MultiPaths {
 		name := mp

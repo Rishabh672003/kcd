@@ -61,11 +61,16 @@ type StorageVolume struct {
 }
 
 // SftpInfo holds the complete cached SFTP connection details for a device.
+//
+// Password is a live credential for the phone's SFTP server, so it is left
+// empty unless the caller explicitly asked for it (see Info). omitempty keeps
+// the field out of the JSON entirely rather than emitting an empty string,
+// so a masked response cannot be mistaken for a device with no password.
 type SftpInfo struct {
 	IP       string          `json:"ip"`
 	Port     json.Number     `json:"port"`
 	User     string          `json:"user"`
-	Password string          `json:"password"`
+	Password string          `json:"password,omitempty"`
 	Path     string          `json:"path"`
 	Volumes  []StorageVolume `json:"volumes,omitempty"`
 }

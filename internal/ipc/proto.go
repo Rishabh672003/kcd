@@ -170,12 +170,23 @@ type StatusResponse struct {
 	Devices        []StatusDevice `json:"devices,omitempty"`
 }
 
+// SftpInfoPayload is used for CmdSftpInfo.
+//
+// ShowPassword is opt-in because the response carries a live credential for
+// the phone's SFTP server; without it the daemon omits the password entirely.
+type SftpInfoPayload struct {
+	DeviceID     string `json:"deviceId"`
+	ShowPassword bool   `json:"showPassword,omitempty"`
+}
+
 // SftpInfoResponse carries cached SFTP connection details returned by CmdSftpInfo.
+//
+// Password is omitted unless the request set ShowPassword.
 type SftpInfoResponse struct {
 	IP       string                  `json:"ip"`
 	Port     json.Number             `json:"port"`
 	User     string                  `json:"user"`
-	Password string                  `json:"password"`
+	Password string                  `json:"password,omitempty"`
 	Path     string                  `json:"path"`
 	Volumes  []StorageVolumeResponse `json:"volumes,omitempty"`
 }

@@ -699,8 +699,14 @@ kcd watch --json --events=sftp.mount | jq -r 'select(.type=="sftp.mount") | .pay
 Show cached SFTP connection details for a paired device, including available storage volumes:
 
 ```
-kcd sftp info <device-id> [--json]
+kcd sftp info <device-id> [--json] [--show-password]
 ```
+
+The password is a working credential for the phone's SFTP server, so it is
+masked by default in both the human and `--json` output. Pass `--show-password`
+to include it, and note that the `sftp.mount` event always carries it — a
+client that needs to mount can take the credentials from the event stream
+instead of asking for them.
 
 **Example output**
 

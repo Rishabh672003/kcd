@@ -43,6 +43,10 @@ Use 'kcd sftp request' first to populate the cache.`,
 					Name:  "json",
 					Usage: "Output raw JSON",
 				},
+				&cli.BoolFlag{
+					Name:  "show-password",
+					Usage: "Include the SFTP password (masked by default)",
+				},
 			},
 			Action: func(c *cli.Context) error {
 				if c.NArg() < 1 {
@@ -52,7 +56,8 @@ Use 'kcd sftp request' first to populate the cache.`,
 				if err != nil {
 					return err
 				}
-				info, err := cl.SftpInfo(c.Args().First())
+				showPassword := c.Bool("show-password")
+				info, err := cl.SftpInfo(c.Args().First(), showPassword)
 				if err != nil {
 					return err
 				}
@@ -61,10 +66,14 @@ Use 'kcd sftp request' first to populate the cache.`,
 					fmt.Println(string(out))
 					return nil
 				}
+				password := "*******"
+				if showPassword {
+					password = info.Password
+				}
 				fmt.Printf("IP:       %s\n", info.IP)
 				fmt.Printf("Port:     %s\n", info.Port)
 				fmt.Printf("User:     %s\n", info.User)
-				fmt.Printf("Password: %s\n", info.Password)
+				fmt.Printf("Password: %s\n", password)
 				fmt.Printf("Path:     %s\n", info.Path)
 				if len(info.Volumes) > 0 {
 					fmt.Println("\nStorage volumes:")
