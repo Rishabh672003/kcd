@@ -314,4 +314,21 @@ func TestUnmountAll_RespectsContextBudget(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("UnmountAll ignored a cancelled context")
 	}
+
+	// UnmountAll returns as soon as ctx is done, so the unmount it spawned is
+	// still in flight. Wait for it before the test ends: it logs as it goes,
+	// and t.Log after the test completes is what the race detector catches.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		p.mu.RLock()
+		_, tracked := p.mountPoints["dev1"]
+		p.mu.RUnlock()
+		if !tracked {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the in-flight unmount never finished after UnmountAll returned")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }

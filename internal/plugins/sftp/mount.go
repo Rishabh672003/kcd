@@ -497,9 +497,14 @@ func findSSHFSPID(mountPoint string) (int, error) {
 //
 // Unmounts run concurrently because each can take up to 13s (3s waiting for
 // sshfs to exit, then a 10s fusermount bound) and a serial loop over several
-// devices would overrun the unit's TimeoutStopSec. ctx bounds the whole thing
-// instead, and anything still running when it expires is logged -- the caller
-// cannot do better, because systemd will SIGKILL next.
+// devices would overrun the unit's TimeoutStopSec.
+//
+// ctx bounds how long *this call* waits, not the work itself: on expiry it
+// returns and the in-flight unmounts carry on in the background, each still
+// bounded by its own timeouts. That is the right trade only because the sole
+// caller is shutdown, where the process exits immediately afterwards and
+// systemd would SIGKILL the stragglers regardless. A caller that intends to keep
+// running must not treat an early return as "unmounted".
 func (p *SftpPlugin) UnmountAll(ctx context.Context) {
 	p.mu.RLock()
 	ids := make([]string, 0, len(p.mountPoints))
