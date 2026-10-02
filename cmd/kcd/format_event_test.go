@@ -254,7 +254,7 @@ func TestFormatEventNewTypes(t *testing.T) {
 		},
 		{
 			name: "device added keeps type token first",
-			ev:   events.Event{Type: events.TypeDeviceAdded, DeviceID: "d1", Payload: "Pixel 8"},
+			ev:   events.Event{Type: events.TypeDeviceAdded, DeviceID: "d1", Payload: map[string]any{"id": "d1", "name": "Pixel 8", "type": "phone", "state": "UNPAIRED", "connected": false}},
 			want: "[d1] device.added: Pixel 8\n",
 		},
 		{

@@ -25,7 +25,10 @@ func (r *Registry) Add(d *Device) {
 	d.SetBus(r.bus)
 	r.devices.Store(d.ID(), d)
 	if r.bus != nil {
-		r.bus.Publish(events.TypeDeviceAdded, d.ID(), d.Name())
+		// The full device view, not just the name: a client receiving this
+		// has nothing else to go on and would otherwise invent a state and a
+		// connected flag, then wait for the next snapshot to be corrected.
+		r.bus.Publish(events.TypeDeviceAdded, d.ID(), d.Info())
 	}
 }
 

@@ -267,7 +267,14 @@ func formatEvent(ev events.Event) string {
 	// device.connected / device.added keep the bare type token as the first
 	// field so anything grepping for it still matches; the detail follows.
 	case events.TypeDeviceAdded:
-		name, _ := ev.Payload.(string)
+		// The payload is a full device view. Still tolerating a bare string
+		// keeps the renderer working if a payload ever predates that change.
+		var name string
+		if s, ok := ev.Payload.(string); ok {
+			name = s
+		} else if info, ok := ev.Payload.(map[string]any); ok {
+			name = str(info, "name")
+		}
 		if name == "" {
 			break
 		}

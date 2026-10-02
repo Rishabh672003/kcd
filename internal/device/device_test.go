@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bethropolis/kcd/internal/events"
 	"github.com/bethropolis/kcd/internal/log"
 	"github.com/bethropolis/kcd/internal/protocol"
 	"github.com/bethropolis/kcd/internal/transport"
@@ -30,6 +31,37 @@ func TestRegistry_Deduplicate(t *testing.T) {
 
 	if devices[0].Name() != "Phone 2" {
 		t.Errorf("expected updated name 'Phone 2', got %q", devices[0].Name())
+	}
+}
+
+// device.added used to publish only the device name, which left a client with
+// nothing but the event envelope and forced it to invent a state and connected
+// flag. The payload has to be the full view.
+func TestRegistry_AddPublishesDeviceInfo(t *testing.T) {
+	bus := events.NewBus(log.Nop())
+	sub := bus.Subscribe(0, events.TypeDeviceAdded)
+	defer sub.Close()
+
+	reg := NewRegistry(bus)
+	reg.Add(NewDevice("dev1", "Pixel 8", "phone", log.Nop()))
+
+	select {
+	case ev := <-sub.C:
+		info, ok := ev.Payload.(DeviceInfo)
+		if !ok {
+			t.Fatalf("payload is %T, want DeviceInfo", ev.Payload)
+		}
+		if info.ID != "dev1" || info.Name != "Pixel 8" || info.Type != "phone" {
+			t.Errorf("payload lost identity fields: %+v", info)
+		}
+		if info.State != StateUnpaired {
+			t.Errorf("State = %v, want %v so a client need not guess", info.State, StateUnpaired)
+		}
+		if info.Connected {
+			t.Error("Connected = true for a device that has never connected")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("no device.added event published")
 	}
 }
 

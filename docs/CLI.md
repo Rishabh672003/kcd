@@ -1033,7 +1033,7 @@ kcd watch [--events <type,...>] [--json]
 
 | Event type | Description |
 |---|---|
-| `device.added` | A new device was seen for the first time |
+| `device.added` | A new device was seen for the first time. Payload is the full device record (`id`, `name`, `type`, `state`, `connected`, `last_seen`), not just the name |
 | `device.removed` | A device was unpaired and removed |
 | `device.connected` | A device established a TCP connection |
 | `device.disconnected` | A device's connection dropped |

@@ -859,7 +859,24 @@ Client authors are encouraged to adopt a similar strategy.
 
 A new device was discovered on the network.
 
-**Payload:** `string` (the device name)
+**Payload:** `DeviceInfo` — the same shape as one entry of `devices`:
+
+```json
+{
+  "id": "a1b2c3d4e5f6_...",
+  "name": "Pixel 9",
+  "type": "phone",
+  "state": "UNPAIRED",
+  "cert_fp": "",
+  "last_seen": "2026-05-27T10:00:00Z",
+  "connected": false
+}
+```
+
+Clients should add the device directly from this payload rather than
+synthesising an entry from the event envelope, which carries only the device
+id. Cached sub-states (`battery`, `media`, `signal`, `sftp`) are absent here:
+none have been reported at discovery time, and they arrive in their own events.
 
 #### `device.removed`
 
