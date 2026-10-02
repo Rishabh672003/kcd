@@ -80,10 +80,47 @@ func buildSSHFSArgs(body SftpBody, remotePath, mountPoint string, uid, gid int, 
 	return args, nil
 }
 
+// sshfsHint maps an sshfs failure message to an actionable hint, or "" when
+// the cause is not one we can advise about.
+//
+// The FUSE hint is deliberately narrow. It used to fire on any message
+// containing "fusermount", which also matched errors that have nothing to do
+// with /etc/fuse.conf — most visibly re-running sshfs onto an already live
+// mountpoint, whose message names fusermount3 but is caused by the duplicate
+// mount. Telling a user to edit fuse.conf there sends them down a dead end.
+// mountWithBody is now idempotent, but precision here is still worth having.
+func sshfsHint(msg string) string {
+	switch {
+	case strings.Contains(msg, "Operation not permitted"),
+		strings.Contains(msg, "user_allow_other"),
+		strings.Contains(msg, "Permission denied"):
+		return "Hint: FUSE requires user_allow_other in /etc/fuse.conf.\nRun: sudo sed -i 's/^#user_allow_other/user_allow_other/' /etc/fuse.conf"
+	case strings.Contains(msg, "sshfs: not found"),
+		strings.Contains(msg, "executable file not found"):
+		return "Hint: sshfs is not installed.\nInstall: sudo apt install sshfs  (or the equivalent for your distro)"
+	default:
+		return ""
+	}
+}
+
 // mountWithBody performs the sshfs mount and returns the local browse path.
 // volumePath specifies which storage volume to mount. If empty, the first
 // available volume is selected automatically.
 func (p *SftpPlugin) mountWithBody(ctx context.Context, deviceID string, body SftpBody, volumePath string) (string, error) {
+	// Idempotent. Re-running sshfs onto a live mountpoint fails with
+	// "fusermount3: failed to access mountpoint ... Permission denied", which
+	// reads like a FUSE permissions problem and is not one. Returning the
+	// existing mount point also makes a repeated request a cheap way to
+	// re-open the file manager.
+	if existing := p.MountedPath(deviceID); existing != "" {
+		p.logger.Info("SFTP already mounted, reusing mount point",
+			log.String("device_id", deviceID),
+			log.String("mount_point", existing),
+		)
+		p.autoOpen(existing)
+		return existing, nil
+	}
+
 	baseDir := p.cfg.MountDir
 	if baseDir == "" {
 		baseDir = os.TempDir()
@@ -121,10 +158,8 @@ func (p *SftpPlugin) mountWithBody(ctx context.Context, deviceID string, body Sf
 		_ = os.Remove(mountPoint)
 		msg := strings.TrimSpace(string(out))
 		errMsg := fmt.Sprintf("sshfs failed: %v\n%s", err, msg)
-		if strings.Contains(msg, "Operation not permitted") || strings.Contains(msg, "fusermount") {
-			errMsg += "\n\nHint: FUSE requires user_allow_other in /etc/fuse.conf.\nRun: sudo sed -i 's/^#user_allow_other/user_allow_other/' /etc/fuse.conf"
-		} else if strings.Contains(msg, "sshfs: not found") || strings.Contains(msg, "executable file not found") {
-			errMsg += "\n\nHint: sshfs is not installed.\nInstall: sudo apt install sshfs  (or the equivalent for your distro)"
+		if hint := sshfsHint(msg); hint != "" {
+			errMsg += "\n\n" + hint
 		}
 		return "", fmt.Errorf("%s", errMsg)
 	}
@@ -153,20 +188,27 @@ func (p *SftpPlugin) mountWithBody(ctx context.Context, deviceID string, body Sf
 		log.String("browse_path", browsePath),
 	)
 
-	// Open in the default file manager (best effort, non-blocking).
-	if p.cfg.AutoOpen {
-		go func() {
-			cmd := p.cfg.OpenCommand
-			if cmd == "" {
-				cmd = "xdg-open"
-			}
-			if err := exec.CommandContext(context.Background(), cmd, browsePath).Start(); err != nil {
-				p.logger.Debug("auto-open failed", log.String("command", cmd), log.Error(err))
-			}
-		}()
-	}
+	p.autoOpen(browsePath)
 
 	return browsePath, nil
+}
+
+// autoOpen opens a browse path in the configured file manager, best effort.
+// It runs the spawn in a goroutine so a slow or hung file manager never
+// blocks the caller's mount or unmount path.
+func (p *SftpPlugin) autoOpen(browsePath string) {
+	if !p.cfg.AutoOpen {
+		return
+	}
+	cmd := p.cfg.OpenCommand
+	if cmd == "" {
+		cmd = "xdg-open"
+	}
+	go func() {
+		if err := exec.CommandContext(context.Background(), cmd, browsePath).Start(); err != nil {
+			p.logger.Debug("auto-open failed", log.String("command", cmd), log.Error(err))
+		}
+	}()
 }
 
 func (p *SftpPlugin) OnConnect(_ device.Sender) {}
@@ -198,21 +240,20 @@ func (p *SftpPlugin) OnDisconnect(dev device.Sender) {
 // Unmount cleanly unmounts a previously mounted SFTP filesystem.
 // It first attempts a graceful shutdown of the sshfs process (SIGTERM → wait → SIGKILL),
 // then uses fusermount to ensure the mount point is released.
-// Returns an error if the device was never mounted.
+//
+// Errors distinguish the three cases a client has to react to differently:
+// not mounted at all, a mount that exists but could not be released, and a
+// clean unmount. Tracked state is dropped only once the mount is actually
+// released, so a failed unmount can be retried instead of leaving the daemon
+// believing the device is unmounted while the FUSE mount is still live.
 func (p *SftpPlugin) Unmount(deviceID string) error {
-	p.mu.Lock()
+	p.mu.RLock()
 	mountPoint, ok := p.mountPoints[deviceID]
-	if ok {
-		delete(p.mountPoints, deviceID)
-	}
 	pid, hasPID := p.mountPIDs[deviceID]
-	if hasPID {
-		delete(p.mountPIDs, deviceID)
-	}
-	p.mu.Unlock()
+	p.mu.RUnlock()
 
 	if !ok {
-		return fmt.Errorf("no active SFTP mount for device %s", deviceID)
+		return fmt.Errorf("not mounted: no SFTP mount for device %s", deviceID)
 	}
 
 	p.logger.Info("unmounting SFTP share", log.String("mount_point", mountPoint))
@@ -248,12 +289,26 @@ func (p *SftpPlugin) Unmount(deviceID string) error {
 	unmountCtx, unmountCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer unmountCancel()
 	if out, err := plugin.RunCommandSync(unmountCtx, tool, "-u", mountPoint); err != nil {
-		p.logger.Warn("fusermount cleanup failed",
+		// Keep the tracked state: the sshfs process is already gone, but the
+		// FUSE mount point may still be held, and the caller needs a retry to
+		// clear it.
+		detail := strings.TrimSpace(string(out))
+		if detail != "" {
+			detail = ": " + detail
+		}
+		p.logger.Warn("fusermount failed",
 			log.String("mount_point", mountPoint),
 			log.Error(err),
 			log.String("output", strings.TrimSpace(string(out))),
 		)
+		return fmt.Errorf("stale SFTP mount at %s could not be released, %s failed: %v%s",
+			mountPoint, tool, err, detail)
 	}
+
+	p.mu.Lock()
+	delete(p.mountPoints, deviceID)
+	delete(p.mountPIDs, deviceID)
+	p.mu.Unlock()
 
 	_ = os.Remove(mountPoint)
 	p.logger.Info("SFTP unmounted", log.String("mount_point", mountPoint))

@@ -750,17 +750,27 @@ Request credentials and immediately mount the phone's filesystem using `sshfs`.
 kcd sftp mount <device-id>
 ```
 
-The mount point is printed to stdout. Unmount with `fusermount -u <mountpoint>`.
+The mount point is printed to stdout. Mounting is idempotent: if the device
+is already mounted, the existing mount point is returned and `sshfs` is not run
+again, so repeating the command is a cheap way to re-open the file manager.
 
 ### sftp unmount
 
 Cleanly unmount a previously mounted phone filesystem.
 
-    kcd sftp unmount <device-id>
+```
+kcd sftp unmount <device-id>
+```
 
 Calls `fusermount3` (or `fusermount` on older systems) and removes the
-temporary mount point directory. Returns an error if the device was never
-mounted in this daemon session.
+mount point directory. Failures are distinguishable so a client can react
+to each:
+
+| Error contains | Meaning |
+|---|---|
+| `not mounted` | The daemon has no mount for this device |
+| `stale SFTP mount at <path> could not be released` | The mount exists but `fusermount` failed; retry, or unmount by path |
+| _(none)_ | Unmounted cleanly |
 
 ### sftp browse
 
