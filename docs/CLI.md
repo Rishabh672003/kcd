@@ -23,9 +23,20 @@ These flags apply to every command:
 
 Edit `$XDG_CONFIG_HOME/kcd/kcd.toml` (default `~/.config/kcd/kcd.toml`).
 All settings are optional; see the annotated example in the packaging directory.
-Apply changes with `systemctl --user restart kcd` (or restart `kcd daemon`
-when running it directly). Timing, storage and notification branding settings
-require a restart; reloading notification filters alone does not apply them.
+
+Changes take effect either by reload or by restart:
+
+| What changed | How to apply |
+|---|---|
+| `[commands]` / `[commands_per_device]` | `systemctl --user reload kcd` |
+| `[notifications]` filters | `systemctl --user reload kcd` |
+| `log_level` | `systemctl --user reload kcd` |
+| Everything else — network timing, storage paths, plugin toggles, branding | `systemctl --user restart kcd` |
+
+A reload re-reads the file and applies only those three; the rest of the
+configuration is captured at startup. Running the daemon directly, send
+`SIGHUP` (`kill -HUP <pid>`) instead. Notification *branding*
+(`[notifications].app_name`) is not reloaded — only the per-app filters are.
 
 | Section | Settings and defaults |
 |---|---|

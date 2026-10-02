@@ -1,7 +1,9 @@
 # kcd configuration file
 # Copy this file to ~/.config/kcd/kcd.toml and edit to taste.
 # All settings are optional — safe defaults are applied automatically.
-# Reload requires a daemon restart: systemctl --user restart kcd
+# `systemctl --user reload kcd` re-reads this file and applies [commands],
+# the [notifications] filters and log_level. Everything else needs
+# systemctl --user restart kcd.
 
 # ─── Identity ─────────────────────────────────────────────────────────────────
 
@@ -21,11 +23,9 @@
 # Default: 1716
 # tcp_port = 1716
 
-# Broadcast is on demand. mDNS advertisement runs always (responder-only,
-# negligible cost); UDP broadcast starts automatically when you run
-# `kcd pair` (listen mode) and while any paired device is offline, and
-# stops otherwise. Paired phones reconnect via the last known address,
-# refreshed from sightings and persisted across restarts.
+# Nothing to configure here. Broadcast is on demand: UDP runs while a paired
+# device is offline, and mDNS advertises always at negligible cost. Paired
+# phones reconnect via their last known address.
 
 # ─── Pairing ──────────────────────────────────────────────────────────────────
 
@@ -35,6 +35,7 @@
 # To initiate pairing to a specific device, run `kcd pair <device-id>`.
 
 # ─── Device Management ─────────────────────────────────────────────────────────
+
 # Automatically remove stale (unpaired, disconnected) devices from the registry.
 # This prevents old discovery entries from accumulating in `kcd devices`.
 # Set to "0" to disable auto-pruning entirely.
@@ -65,6 +66,7 @@
 # log_level = "info"
 
 # ─── Plugins ──────────────────────────────────────────────────────────────────
+
 # Each plugin can be individually enabled or disabled.
 # All plugins are enabled by default.
 
@@ -112,13 +114,7 @@ connectivity = true
 mousepad = true
 
 # Browse the phone's filesystem over SFTP.
-# Optional: requires sshfs for the `kcd sftp mount` command.
-# Commands:
-#   kcd sftp request <id>   — Ask the phone to start its SFTP server
-#   kcd sftp info <id>      — Show cached connection details and volumes
-#   kcd sftp volumes <id>   — List available storage volumes (multiPaths)
-#   kcd sftp mount <id>     — Request credentials, mount via sshfs, open
-#   kcd sftp unmount <id>   — Unmount a previously mounted filesystem
+# Optional: requires sshfs for `kcd sftp mount`. See `kcd sftp --help`.
 sftp = true
 
 # Ring the phone to locate it.
@@ -134,19 +130,11 @@ lockdevice = true
 systemvolume = true
 
 # Send and receive SMS messages via a connected phone.
-# Commands:
-#   kcd sms send <id> <phone> <msg>        — Send an SMS
-#   kcd sms conversations <id>             — List all conversations (results via `kcd watch --events sms.incoming`)
-#   kcd sms conversation <id> <thread>     — Show a specific conversation
-#   kcd sms attachment <id> <part> <uid>   — Request an MMS attachment file
-# See the [sms] section below for notification settings.
+# See `kcd sms --help`, and the [sms] section below for notifications.
 sms = true
 
 # Sync the phone address book (vCards cached under
-# ~/.local/share/kcd/contacts/<device-id>/).
-# Commands:
-#   kcd contacts sync <id>                 — Request a sync (results via `kcd watch --events contacts.updated`)
-#   kcd contacts list <id> [--json]        — List cached contacts
+# ~/.local/share/kcd/contacts/<device-id>/). See `kcd contacts --help`.
 # The phone gates this on READ_CONTACTS plus per-device opt-in; unpairing
 # wipes the cached address book.
 contacts = true
@@ -157,13 +145,11 @@ contacts = true
 presenter = true
 
 # Control the remote device's audio volume from this machine.
-# Commands:
-#   kcd volume list <id>                    — List audio sinks on the phone
-#   kcd volume set <id> <sink> <0-100>      — Set volume for a sink
-#   kcd volume mute <id> <sink> <true|false> — Mute/unmute a sink
+# See `kcd volume --help`.
 remotesystemvolume = true
 
 # ─── Connection timing and storage ────────────────────────────────────────────
+
 # Durations use Go syntax (e.g. "750ms", "10s", "5m") and must be positive.
 # Restart the daemon after changing these settings.
 
@@ -179,9 +165,11 @@ remotesystemvolume = true
 # initial_backoff = "2s"
 # max_backoff = "5m"              # must be >= initial_backoff
 # flap_threshold = "15s"          # minimum lifetime for a stable connection
-# sighting_driven = true          # park redial on discovery sightings; false = legacy pure-timer loop
+# sighting_driven = true          # dial as soon as a paired phone is seen on
+                                 # the network instead of on a timer
 # fallback_max = "1h"             # must be >= max_backoff; silent-case spacing while parked
-# stale_after = "24h"             # give up (zero timers) past this silence; next sighting respawns
+# stale_after = "24h"             # stop redialing entirely after this much
+                                 # silence; a sighting starts it again
 
 [discovery]
 # broadcast_interval = "30s"
@@ -190,15 +178,14 @@ remotesystemvolume = true
 # they do not enable permanent broadcast or change mDNS advertisement.
 
 [mpris]
-# The local D-Bus watcher is event-driven; this section tunes the position
-# poller that keeps the phone's now-playing display exact while music plays.
-# poll_while_playing = true  # false = pure event-driven (position extrapolates
-                             # from posAnchorMs; no poller at all, so a dropped
-                             # D-Bus signal can leave the display stale)
-# position_interval = "2s"    # D-Bus re-read cadence while playing only.
-                             # D-Bus signals arm the poller on playback and it
-                             # stops itself on a confirmed pause, so a paused
-                             # or absent player costs zero wakeups.
+# The D-Bus watcher is event-driven; these two tune the position poller that
+# keeps the phone's display moving in real time.
+# poll_while_playing = true   # false = trust the extrapolated position from
+                             # D-Bus signals alone. Cheaper, but a dropped
+                             # signal leaves the phone's position stale.
+# position_interval = "2s"    # Re-read cadence while playing. Signals start
+                             # and stop the poller, so a paused or absent
+                             # player costs zero wakeups.
 
 [cache]
 # Empty values preserve existing storage paths; use absolute paths to override.
@@ -212,6 +199,7 @@ remotesystemvolume = true
 # push_on_connect = false
 
 # ─── RunCommand: exposed commands ─────────────────────────────────────────────
+
 # Shell commands that the RunCommand plugin makes available to your phone.
 # Trigger them from the KDE Connect Android app → your device → Run command.
 # Keys are the display labels; values are the shell commands executed locally.
@@ -229,6 +217,7 @@ suspend = "systemctl suspend"
 # screenshot = "grimblast save screen ~/Pictures/screenshot-$(date +%F-%T).png"
 
 # ─── Notification filters ─────────────────────────────────────────────────────
+
 # Control which phone app notifications appear on the desktop.
 # Keys are Android app package names. Values: "show" or "silent".
 # "silent" still emits a notification event (visible in kcd watch) but skips
@@ -242,6 +231,7 @@ suspend = "systemctl suspend"
 # "*"                  = "show"
 
 # ─── Battery: notifications and thresholds ────────────────────────────────────
+
 # In addition to monitoring your phone's battery, the daemon also sends this
 # machine's battery state to connected devices. This happens once on connect
 # and whenever the phone explicitly requests it — no periodic polling.
@@ -307,15 +297,12 @@ suspend = "systemctl suspend"
 
 [sms]
 # notify_incoming = true       # show a desktop notification on incoming SMS
-# always_arm = false           # ask the phone to push new SMS on every
+# always_arm = false           # Ask the phone to push new SMS on every
                                # connect, so notifications work with no
                                # client attached. Off by default because an
                                # armed phone cannot be un-armed; without it,
                                # `kcd watch --events sms.incoming` receives
                                # messages instead.
-                               # The phone applies its blocked-numbers list
-                               # only to the deprecated telephony push, so
-                               # blocked senders can still arrive here.
 
 # ─── Mousepad: remote input settings ─────────────────────────────────────────
 
