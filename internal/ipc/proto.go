@@ -189,6 +189,9 @@ type SftpInfoResponse struct {
 	Password string                  `json:"password,omitempty"`
 	Path     string                  `json:"path"`
 	Volumes  []StorageVolumeResponse `json:"volumes,omitempty"`
+	Mounted  bool                    `json:"mounted"`
+	// MountPoint is the local directory the device's storage is mounted at.
+	MountPoint string `json:"mountPoint,omitempty"`
 }
 
 // StorageVolumeResponse describes a single browsable storage root on a device.

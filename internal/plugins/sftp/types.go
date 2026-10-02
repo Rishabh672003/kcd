@@ -73,6 +73,12 @@ type SftpInfo struct {
 	Password string          `json:"password,omitempty"`
 	Path     string          `json:"path"`
 	Volumes  []StorageVolume `json:"volumes,omitempty"`
+
+	// Mounted reports whether this device's filesystem is currently mounted,
+	// and MountPoint is where. Clients use it to render a mount toggle
+	// without inspecting the host's mount table.
+	Mounted    bool   `json:"mounted"`
+	MountPoint string `json:"mountPoint,omitempty"`
 }
 
 func (p *SftpPlugin) Name() string            { return "SFTP" }

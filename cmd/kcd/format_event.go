@@ -25,6 +25,16 @@ func oneLine(s string) string {
 	return strings.Join(strings.Fields(s), " ")
 }
 
+// volumeSuffix renders the optional volume an event was mounted for. The
+// daemon omits the key when the phone picked the volume itself, so an absent
+// key has to render as nothing rather than as a stray separator.
+func volumeSuffix(payload map[string]any) string {
+	if v, ok := payload["volume"].(string); ok && v != "" {
+		return " (" + v + ")"
+	}
+	return ""
+}
+
 // decodePayload re-decodes an event payload into a concrete type. The daemon
 // hands the CLI generic JSON, so a payload that was published as a struct
 // arrives as an untyped map and has to be round-tripped to reuse the same
@@ -101,6 +111,12 @@ func formatEvent(ev events.Event) string {
 
 	case events.TypeSftpMount:
 		return fmt.Sprintf("[%s] SFTP credentials received: %s\n", ev.DeviceID, payload["uri"])
+
+	case events.TypeSftpMounted:
+		return fmt.Sprintf("[%s] SFTP mounted at %s%s\n", ev.DeviceID, payload["mountPoint"], volumeSuffix(payload))
+
+	case events.TypeSftpUnmounted:
+		return fmt.Sprintf("[%s] SFTP unmounted (was %s)\n", ev.DeviceID, payload["mountPoint"])
 
 	case events.TypePairRequested:
 		return fmt.Sprintf("[%s] pair request from %s (%s). code: %v\n", ev.DeviceID, payload["name"], payload["type"], payload["verificationKey"])

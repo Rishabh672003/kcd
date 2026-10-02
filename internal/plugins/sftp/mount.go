@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/bethropolis/kcd/internal/device"
+	"github.com/bethropolis/kcd/internal/events"
 	"github.com/bethropolis/kcd/internal/log"
 	"github.com/bethropolis/kcd/internal/plugin"
 )
@@ -187,10 +188,31 @@ func (p *SftpPlugin) mountWithBody(ctx context.Context, deviceID string, body Sf
 		log.String("mount_point", mountPoint),
 		log.String("browse_path", browsePath),
 	)
+	p.publishMounted(deviceID, mountPoint, volumePath)
 
 	p.autoOpen(browsePath)
 
 	return browsePath, nil
+}
+
+// publishMounted announces a completed mount so clients can render a truthful
+// mount toggle without inspecting /proc themselves.
+func (p *SftpPlugin) publishMounted(deviceID, mountPoint, volumePath string) {
+	if p.bus == nil {
+		return
+	}
+	payload := map[string]any{"mountPoint": mountPoint}
+	if volumePath != "" {
+		payload["volume"] = volumePath
+	}
+	p.bus.Publish(events.TypeSftpMounted, deviceID, payload)
+}
+
+func (p *SftpPlugin) publishUnmounted(deviceID, mountPoint string) {
+	if p.bus == nil {
+		return
+	}
+	p.bus.Publish(events.TypeSftpUnmounted, deviceID, map[string]any{"mountPoint": mountPoint})
 }
 
 // autoOpen opens a browse path in the configured file manager, best effort.
@@ -312,6 +334,7 @@ func (p *SftpPlugin) Unmount(deviceID string) error {
 
 	_ = os.Remove(mountPoint)
 	p.logger.Info("SFTP unmounted", log.String("mount_point", mountPoint))
+	p.publishUnmounted(deviceID, mountPoint)
 	return nil
 }
 

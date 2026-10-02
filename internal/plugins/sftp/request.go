@@ -150,6 +150,10 @@ func (p *SftpPlugin) MountLocally(ctx context.Context, deviceID string) (string,
 // output routinely lands in scrollback, logs and $(...) captures. Callers that
 // genuinely need it (mounting) get credentials from the sftp.mount event
 // instead, which is unaffected by this gate.
+//
+// Returns nil if no credentials have been received yet, even for a device that
+// is still mounted -- mount state outlives the credential cache, which is
+// cleared on disconnect.
 func (p *SftpPlugin) Info(deviceID string, includePassword bool) *SftpInfo {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
@@ -162,6 +166,10 @@ func (p *SftpPlugin) Info(deviceID string, includePassword bool) *SftpInfo {
 		Port: body.Port,
 		User: body.User,
 		Path: body.Path,
+		// Read under the same lock as the credential cache so the two halves
+		// of the response cannot disagree.
+		Mounted:    p.mountPoints[deviceID] != "",
+		MountPoint: p.mountPoints[deviceID],
 	}
 	if includePassword {
 		info.Password = body.Password
@@ -210,4 +218,9 @@ func (p *SftpPlugin) MountedPath(deviceID string) string {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return p.mountPoints[deviceID]
+}
+
+// IsMounted reports whether a device's filesystem is currently mounted.
+func (p *SftpPlugin) IsMounted(deviceID string) bool {
+	return p.MountedPath(deviceID) != ""
 }

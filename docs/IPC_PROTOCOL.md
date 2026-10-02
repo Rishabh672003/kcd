@@ -101,6 +101,7 @@ Fields:
 | `battery` | object (optional) | `{"charge": 85, "charging": true, "batteryAgeMs": 1234}` — cached battery state; absent when the device never reported |
 | `media` | object (optional) | Cached `NowPlaying` plus `mediaAgeMs` (ms since the phone reported); absent when the device never reported media |
 | `signal` | object (optional) | Cached connectivity report (`{"signalStrengths": {...}}`); absent when never reported |
+| `sftp` | object (optional) | `{"mounted": true, "mountPoint": "/path/to/mnt"}`; present only while the device's storage is mounted, so absence means not mounted |
 
 #### `pair`
 
@@ -1161,6 +1162,38 @@ SFTP credentials received (success) or error.
 ```json
 {"error": "SFTP server rejected credentials"}
 ```
+
+Note that the success payload carries the live SFTP password. Subscribers to
+`sftp.mount` receive a working credential and must not surface it.
+
+#### `sftp.mounted`
+
+The device's filesystem finished mounting. Fired on the mount transition, not
+when credentials arrive — a client can subscribe to this alone to track mount
+state.
+
+**Payload:**
+
+```json
+{"mountPoint": "/home/user/Downloads/kcd/mnt/kcd-sftp-a1b2c3d4", "volume": "/storage/ABCD-1234"}
+```
+
+`volume` is present only when a specific storage volume was mounted; when the
+daemon auto-selected the phone's default volume the key is absent.
+
+#### `sftp.unmounted`
+
+The device's filesystem was released.
+
+**Payload:**
+
+```json
+{"mountPoint": "/home/user/Downloads/kcd/mnt/kcd-sftp-a1b2c3d4"}
+```
+
+Mount state is also available without waiting for an event: `state.snapshot`
+carries a `sftp` object per mounted device, and `sftp_info` returns `mounted`
+and `mountPoint`.
 
 ### 5.10 Volume Events
 

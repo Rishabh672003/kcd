@@ -7,6 +7,7 @@ import (
 	"github.com/bethropolis/kcd/internal/plugin"
 	"github.com/bethropolis/kcd/internal/plugins/connectivity"
 	"github.com/bethropolis/kcd/internal/plugins/mpris"
+	"github.com/bethropolis/kcd/internal/plugins/sftp"
 )
 
 // BatteryStatus mirrors the battery state for embedding in summaries.
@@ -31,6 +32,14 @@ type DeviceSummary struct {
 	Battery *BatteryStatus                 `json:"battery,omitempty"`
 	Media   *MediaState                    `json:"media,omitempty"`
 	Signal  *connectivity.ConnectivityBody `json:"signal,omitempty"`
+	Sftp    *SftpMountState                `json:"sftp,omitempty"`
+}
+
+// SftpMountState carries a device's current SFTP mount state so clients can
+// render a mount toggle from a snapshot alone.
+type SftpMountState struct {
+	Mounted    bool   `json:"mounted"`
+	MountPoint string `json:"mountPoint,omitempty"`
 }
 
 // SummarizeDevice builds the enriched view of one device. Absent plugins
@@ -82,6 +91,14 @@ func SummarizeDevice(dev *device.Device, plugins *plugin.Registry) DeviceSummary
 		if report, ok := pl.(*connectivity.ConnectivityPlugin).Report(dev.ID()); ok {
 			r := report
 			sum.Signal = &r
+		}
+	}
+	// Only report a mount that exists. A device with no SFTP credentials
+	// cached and nothing mounted stays omitted rather than advertising a
+	// permanent "not mounted" the client has to special-case.
+	if pl, ok := plugins.GetByName("SFTP"); ok {
+		if mp := pl.(*sftp.SftpPlugin).MountedPath(dev.ID()); mp != "" {
+			sum.Sftp = &SftpMountState{Mounted: true, MountPoint: mp}
 		}
 	}
 	return sum

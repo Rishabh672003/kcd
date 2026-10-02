@@ -75,6 +75,11 @@ Use 'kcd sftp request' first to populate the cache.`,
 				fmt.Printf("User:     %s\n", info.User)
 				fmt.Printf("Password: %s\n", password)
 				fmt.Printf("Path:     %s\n", info.Path)
+				if info.Mounted {
+					fmt.Printf("Mounted:  yes (%s)\n", info.MountPoint)
+				} else {
+					fmt.Println("Mounted:  no")
+				}
 				if len(info.Volumes) > 0 {
 					fmt.Println("\nStorage volumes:")
 					for _, v := range info.Volumes {

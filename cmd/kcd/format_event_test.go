@@ -58,6 +58,21 @@ func TestFormatEventExistingFormats(t *testing.T) {
 			want: "[d1] SFTP credentials received: sftp://x\n",
 		},
 		{
+			name: "sftp mounted",
+			ev:   events.Event{Type: events.TypeSftpMounted, DeviceID: "d1", Payload: map[string]any{"mountPoint": "/mnt/kcd-sftp-d1"}},
+			want: "[d1] SFTP mounted at /mnt/kcd-sftp-d1\n",
+		},
+		{
+			name: "sftp mounted with volume",
+			ev:   events.Event{Type: events.TypeSftpMounted, DeviceID: "d1", Payload: map[string]any{"mountPoint": "/mnt/kcd-sftp-d1", "volume": "/storage/ABCD-1234"}},
+			want: "[d1] SFTP mounted at /mnt/kcd-sftp-d1 (/storage/ABCD-1234)\n",
+		},
+		{
+			name: "sftp unmounted",
+			ev:   events.Event{Type: events.TypeSftpUnmounted, DeviceID: "d1", Payload: map[string]any{"mountPoint": "/mnt/kcd-sftp-d1"}},
+			want: "[d1] SFTP unmounted (was /mnt/kcd-sftp-d1)\n",
+		},
+		{
 			name: "pair requested",
 			ev:   events.Event{Type: events.TypePairRequested, DeviceID: "d1", Payload: map[string]any{"name": "Pixel", "type": "phone", "verificationKey": "12345"}},
 			want: "[d1] pair request from Pixel (phone). code: 12345\n",
@@ -251,7 +266,8 @@ func TestFormatEventStateSnapshotStaysBare(t *testing.T) {
 func TestFormatEventSurvivesBadPayloads(t *testing.T) {
 	types := []events.EventType{
 		events.TypeBatteryUpdate, events.TypeBatteryThreshold, events.TypeNotification,
-		events.TypeSftpMount, events.TypePairAccepted, events.TypeMprisUpdate,
+		events.TypeSftpMount, events.TypeSftpMounted, events.TypeSftpUnmounted,
+		events.TypePairAccepted, events.TypeMprisUpdate,
 		events.TypeSMSIncoming, events.TypeSMSAttachment, events.TypePingReceived,
 		events.TypeConnectivityUpdate, events.TypeTelephonyRinging, events.TypeTelephonyMissed,
 		events.TypeTelephonyTalking, events.TypeTelephonyCanceled, events.TypeVolumeUpdate,

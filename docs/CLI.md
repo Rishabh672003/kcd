@@ -711,18 +711,26 @@ instead of asking for them.
 **Example output**
 
 ```
-Device: a1b2c3d4_e5f6_7890_abcd_ef1234567890 (Pixel 8 Pro)
-IP:     192.168.1.50
-Port:   8022
-User:   sftp-user
+IP:       192.168.1.50
+Port:     8022
+User:     sftp-user
 Password: ********
+Path:     /storage/emulated/0
+Mounted:  yes (/home/user/Downloads/kcd/mnt/kcd-sftp-a1b2c3d4)
 
-Volumes:
-  1. Internal shared storage  →  /storage/emulated/0
-  2. SD card                  →  /storage/ABCD-1234
+Storage volumes:
+  Internal shared storage  /storage/emulated/0
+  SD card  /storage/ABCD-1234
 ```
 
-If the phone returned an error (e.g. storage permission not granted), the `errorMessage` field is shown instead.
+`Mounted:` reports the current mount state, so a client or script can check it
+without touching `/proc`. Subscribe to the `sftp.mounted` and `sftp.unmounted`
+events to be told when it changes.
+
+A failed request is not shown here: when the phone returns an error (e.g.
+storage permission not granted) the credentials are never cached, so `info`
+reports no cached credentials. The error itself arrives on the `sftp.mount`
+event as `{"error": "..."}`.
 
 ### sftp volumes
 
@@ -1042,6 +1050,8 @@ kcd watch [--events <type,...>] [--json]
 | `volume.update` | Device volume changed: `{name, volume, muted}` |
 | `mpris.update` | Now playing: `{player, title, artist, album, isPlaying, pos, length, volume}` |
 | `sftp.mount` | SFTP credentials: `{uri, ip, port, user, password, path, multiPaths, pathNames, errorMessage}` |
+| `sftp.mounted` | Mount finished: `{mountPoint, volume?}` |
+| `sftp.unmounted` | Mount released: `{mountPoint}` |
 | `battery.threshold` | Battery low/full alert: `{charge, charging, event}` |
 | `telephony.talking` | Call in progress: `{contactName, phoneNumber}` |
 | `sms.incoming` | SMS/MMS received: `{body, sender, date, thread_id, read}` |

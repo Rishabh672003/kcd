@@ -6,8 +6,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/bethropolis/kcd/internal/config"
+	"github.com/bethropolis/kcd/internal/events"
 	"github.com/bethropolis/kcd/internal/log"
 )
 
@@ -135,5 +137,64 @@ func TestSshfsHint(t *testing.T) {
 				t.Errorf("hint missing %q, got:\n%s", tc.wantSub, got)
 			}
 		})
+	}
+}
+
+// Mount state transitions must reach the bus, since that is the only way a
+// client can render a mount toggle without inspecting the host mount table.
+func TestMountStateEventsPublished(t *testing.T) {
+	bus := events.NewBus(log.NewTest(t))
+	sub := bus.Subscribe(0, events.TypeSftpMounted, events.TypeSftpUnmounted)
+	defer sub.Close()
+
+	p := newTestPlugin(t, t.TempDir())
+	p.bus = bus
+
+	// The idempotent path reuses the mount point without a state change, so it
+	// must not announce a transition that did not happen.
+	p.mountPoints["dev1"] = "/mnt/kcd-sftp-dev1"
+	if _, err := p.mountWithBody(context.Background(), "dev1", SftpBody{}, ""); err != nil {
+		t.Fatalf("idempotent mount: %v", err)
+	}
+	select {
+	case ev := <-sub.C:
+		t.Fatalf("unexpected event on a no-op mount: %+v", ev)
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	p.publishMounted("dev1", "/mnt/kcd-sftp-dev1", "/storage/ABCD-1234")
+	ev := <-sub.C
+	if ev.Type != events.TypeSftpMounted {
+		t.Fatalf("got %s, want %s", ev.Type, events.TypeSftpMounted)
+	}
+	if got := ev.Payload.(map[string]any)["mountPoint"]; got != "/mnt/kcd-sftp-dev1" {
+		t.Errorf("mountPoint = %v, want /mnt/kcd-sftp-dev1", got)
+	}
+	if got := ev.Payload.(map[string]any)["volume"]; got != "/storage/ABCD-1234" {
+		t.Errorf("volume = %v, want /storage/ABCD-1234", got)
+	}
+
+	p.publishUnmounted("dev1", "/mnt/kcd-sftp-dev1")
+	ev = <-sub.C
+	if ev.Type != events.TypeSftpUnmounted {
+		t.Fatalf("got %s, want %s", ev.Type, events.TypeSftpUnmounted)
+	}
+}
+
+func TestInfoReportsMountState(t *testing.T) {
+	p := newTestPlugin(t, t.TempDir())
+	p.lastBody["dev1"] = SftpBody{IP: "192.168.1.42", User: "u0_a123", Path: "/storage/emulated/0"}
+
+	if info := p.Info("dev1", false); info.Mounted {
+		t.Error("reported mounted with no mount tracked")
+	}
+
+	p.mountPoints["dev1"] = "/mnt/kcd-sftp-dev1"
+	info := p.Info("dev1", false)
+	if !info.Mounted {
+		t.Error("reported not mounted while a mount is tracked")
+	}
+	if info.MountPoint != "/mnt/kcd-sftp-dev1" {
+		t.Errorf("MountPoint = %q, want /mnt/kcd-sftp-dev1", info.MountPoint)
 	}
 }

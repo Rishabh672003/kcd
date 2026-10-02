@@ -292,7 +292,7 @@ goroutine leak when the child wedges.
 | `ping` | `kdeconnect.ping` | Fires `ping.received`; can be sent outbound |
 | `runcommand` | `kdeconnect.runcommand`, `kdeconnect.runcommand.output` | Executes commands from the `[commands]` config table; results stream to the phone's output card via `runcommand.output` (`commandStarted` → batched `commandOutput` → `commandFinished`, all sharing one 32-bit id). A capped notification is still sent as a fallback. A 15s bound per execution; `{"stop":true}` from the phone cancels it, as does disconnect. |
 | `sms` | `kdeconnect.sms.messages`, `kdeconnect.sms.attachment_file` | Sends `kdeconnect.sms.request`, `kdeconnect.sms.request_conversations`, `kdeconnect.sms.request_conversation`, `kdeconnect.sms.request_attachment` |
-| `sftp` | `kdeconnect.sftp` | Parses `multiPaths`, `pathNames`, and `errorMessage` from the phone's response. `Info()` returns cached credentials + `StorageVolume` slices; `Volumes()` lists storage roots with human-readable names. `Handle()` logs errors when the phone returns `errorMessage` (e.g. missing storage permission). Mounts at server root to avoid chroot double-path bug; tracks mounts in `mountPoints` map; `Unmount()` calls `fusermount3`/`fusermount` |
+| `sftp` | `kdeconnect.sftp` | Parses `multiPaths`, `pathNames`, and `errorMessage` from the phone's response. `Info()` returns cached credentials + `StorageVolume` slices; `Volumes()` lists storage roots with human-readable names. `Handle()` logs errors when the phone returns `errorMessage` (e.g. missing storage permission). Mounts at server root to avoid chroot double-path bug; tracks mounts in `mountPoints` map; `Unmount()` calls `fusermount3`/`fusermount`. Mounting is idempotent (`mountWithBody` returns an existing mount point rather than re-running `sshfs` over a live one), tracked state is dropped only after `fusermount` actually releases the mount so failures stay retryable, and `Info(deviceID, includePassword)` gates the credential — `kcd sftp info` masks it by default because the output lands in scrollback and logs |
 | `share` | `kdeconnect.share.request` | Streaming file receive + URL/text handling; fires progress events |
 | `systemvolume` | `kdeconnect.systemvolume` | Accepts `bus`; publishes `volume.update` on volume/mute changes |
 | `telephony` | `kdeconnect.telephony` | Fires `telephony.ringing`, `.missed`, `.canceled` |
@@ -338,7 +338,9 @@ Each `Subscriber` holds a buffered channel (capacity 64). If a subscriber falls 
 | `telephony.canceled` | Call ended |
 | `connectivity.update` | Signal strength report |
 | `volume.update` | Desktop volume changed from phone |
-| `sftp.mount` | SFTP credentials received |
+| `sftp.mount` | SFTP credentials received (carries the live password — subscribers must not surface it) |
+| `sftp.mounted` | A device's storage finished mounting (`{mountPoint, volume?}`) |
+| `sftp.unmounted` | A device's storage was released (`{mountPoint}`) |
 | `sms.incoming` | SMS message received from phone (batch, one event per message) |
 | `sms.attachment` | MMS attachment file downloaded to cache directory |
 
