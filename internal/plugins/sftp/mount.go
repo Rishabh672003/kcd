@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -450,4 +451,65 @@ func findSSHFSPID(mountPoint string) (int, error) {
 		}
 	}
 	return 0, fmt.Errorf("no sshfs process found for mount point %s", mountPoint)
+}
+
+// UnmountAll releases every mount the plugin is tracking, and returns once
+// they are all released or ctx is done.
+//
+// Shutdown has to do this. OnDisconnect only fires when a connection drops, so
+// a graceful stop used to leave every mount live -- and with the mount
+// directory under $XDG_STATE_HOME in the no-session fallback, `uninstall.sh
+// --purge`'s `rm -rf` would then descend into a live mount and delete the
+// phone's files. Even with the runtime-dir default, leaving a mount behind on
+// every restart is not a reasonable way to end.
+//
+// Tracked devices are the source for the list rather than the device registry:
+// this is the plugin's own record of what it believes is mounted, including
+// mounts adopted from the kernel earlier in the session.
+//
+// Unmounts run concurrently because each can take up to 13s (3s waiting for
+// sshfs to exit, then a 10s fusermount bound) and a serial loop over several
+// devices would overrun the unit's TimeoutStopSec. ctx bounds the whole thing
+// instead, and anything still running when it expires is logged -- the caller
+// cannot do better, because systemd will SIGKILL next.
+func (p *SftpPlugin) UnmountAll(ctx context.Context) {
+	p.mu.RLock()
+	ids := make([]string, 0, len(p.mountPoints))
+	for id := range p.mountPoints {
+		ids = append(ids, id)
+	}
+	p.mu.RUnlock()
+
+	if len(ids) == 0 {
+		return
+	}
+	p.logger.Info("releasing SFTP mounts on shutdown", log.Int("count", len(ids)))
+
+	var wg sync.WaitGroup
+	for _, id := range ids {
+		wg.Add(1)
+		go func(deviceID string) {
+			defer wg.Done()
+			if err := p.Unmount(deviceID); err != nil {
+				p.logger.Warn("could not release SFTP mount on shutdown",
+					log.String("device_id", deviceID),
+					log.Error(err),
+				)
+			}
+		}(id)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-ctx.Done():
+		p.logger.Warn("timed out releasing SFTP mounts; some may survive this shutdown",
+			log.Error(ctx.Err()),
+		)
+	}
 }

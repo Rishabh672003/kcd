@@ -252,3 +252,66 @@ func TestUnmount_LiveMountTakesTheReleasePath(t *testing.T) {
 		t.Error("state was dropped for a mount the kernel still reports; it should stay retryable")
 	}
 }
+
+// Shutdown has to release mounts: OnDisconnect never fires on a graceful stop,
+// so without this every restart leaves the phone's storage mounted.
+//
+// What UnmountAll owns is visiting every tracked device, concurrently, and
+// publishing the transition. Releasing a genuinely live mount needs a real
+// FUSE mount, which a unit test cannot create -- so the table here reports the
+// mounts as already gone, and each Unmount clears its own state on that path.
+// The live-release path is covered by TestUnmount_LiveMountTakesTheReleasePath.
+func TestUnmountAll_VisitsEveryTrackedDevice(t *testing.T) {
+	useFakeMountTable(t, "proc /proc proc rw 0 0\n")
+
+	bus := events.NewBus(log.NewTest(t))
+	sub := bus.Subscribe(0, events.TypeSftpUnmounted)
+	defer sub.Close()
+
+	p := newTestPlugin(t, t.TempDir())
+	p.bus = bus
+	for _, id := range []string{"dev1", "dev2", "dev3"} {
+		p.mountPoints[id] = p.mountPointFor(id)
+	}
+
+	p.UnmountAll(context.Background())
+
+	if left := p.mountPoints; len(left) != 0 {
+		t.Errorf("still tracking %d mount(s) after UnmountAll: %v", len(left), left)
+	}
+	for i := range 3 {
+		select {
+		case <-sub.C:
+		case <-time.After(time.Second):
+			t.Fatalf("only %d of 3 sftp.unmounted events arrived", i)
+		}
+	}
+}
+
+func TestUnmountAll_NoMountsIsANoOp(t *testing.T) {
+	p := newTestPlugin(t, t.TempDir())
+	p.UnmountAll(context.Background()) // must not block or panic
+}
+
+// The budget is what protects shutdown from a wedged FUSE mount, so an expired
+// context has to end the wait rather than hang it.
+func TestUnmountAll_RespectsContextBudget(t *testing.T) {
+	p := newTestPlugin(t, t.TempDir())
+	p.mountPoints["dev1"] = p.mountPointFor("dev1")
+	// The kernel does not know this mount, so Unmount takes the
+	// already-released path and returns; the point is that a cancelled context
+	// still terminates the call.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	done := make(chan struct{})
+	go func() {
+		p.UnmountAll(ctx)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("UnmountAll ignored a cancelled context")
+	}
+}
