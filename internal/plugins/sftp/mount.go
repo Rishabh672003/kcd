@@ -108,6 +108,12 @@ func sshfsHint(msg string) string {
 // volumePath specifies which storage volume to mount. If empty, the first
 // available volume is selected automatically.
 func (p *SftpPlugin) mountWithBody(ctx context.Context, deviceID string, body SftpBody, volumePath string) (string, error) {
+	mountPoint := p.mountPointFor(deviceID)
+	// Warned before the reuse check as well as after it: a user who already
+	// has a mount at a hazardous location still needs telling, and it is
+	// logged once per location, so hoisting it costs nothing.
+	p.warnIfInBulkDeletableDir(mountPoint)
+
 	// Idempotent. Re-running sshfs onto a live mountpoint fails with
 	// "fusermount3: failed to access mountpoint ... Permission denied", which
 	// reads like a FUSE permissions problem and is not one. Returning the
@@ -122,7 +128,6 @@ func (p *SftpPlugin) mountWithBody(ctx context.Context, deviceID string, body Sf
 		return existing, nil
 	}
 
-	mountPoint := p.mountPointFor(deviceID)
 	if err := os.MkdirAll(mountPoint, 0700); err != nil {
 		return "", fmt.Errorf("create mount point %s: %w", mountPoint, err)
 	}

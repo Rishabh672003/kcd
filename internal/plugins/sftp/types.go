@@ -20,7 +20,10 @@ type SftpPlugin struct {
 	mu          sync.RWMutex
 	lastBody    map[string]SftpBody
 	mountPoints map[string]string // deviceID -> local mountPoint path
-	mountPIDs   map[string]int    // deviceID -> sshfs PID for graceful shutdown
+	// warnedDirs records mount directories the document-folder warning has
+	// already fired for, so it is logged once per location per run.
+	warnedDirs map[string]bool
+	mountPIDs  map[string]int // deviceID -> sshfs PID for graceful shutdown
 }
 
 func NewSftpPlugin(cfg config.SFTPConfig, bus *events.Bus, logger log.Logger) *SftpPlugin {
