@@ -48,7 +48,6 @@ const discoveryDialMinInterval = 2 * time.Second
 
 func runTransport(ctx context.Context, cfg *tls.Config, bc *discovery.BroadcasterController, identity *protocol.Packet, devices *device.Registry, plugins *plugin.Registry, localDeviceID string, logger log.Logger, opts *config.Config) {
 
-	// TCP Listener
 	tcpListener, err := transport.Listen(ctx, fmt.Sprintf(":%d", opts.TCPPort))
 	if err != nil {
 		logger.Error("failed to start TCP listener", log.Error(err))
@@ -57,24 +56,19 @@ func runTransport(ctx context.Context, cfg *tls.Config, bc *discovery.Broadcaste
 	defer tcpListener.Close()
 	tcpListener.SetKeepAliveIdle(config.Duration(opts.Network.KeepAliveIdle))
 
-	// Broadcast is off by default — controlled via `kcd pair` or IPC.
-	// The controller is started in stopped state.
+	// Broadcast is off by default — controlled via `kcd pair` or IPC, and the
+	// controller starts in the stopped state.
 
-	// UDP/mDNS Listener (onDeviceFound)
+	// Discovery is event-driven with no timers or polling. Paired devices,
+	// pairing mode (`kcd pair` listen) and explicit `kcd pair <id>` intent dial
+	// and keep the connection; an unpaired stranger gets exactly one ephemeral
+	// dial per unpaired era so both sides can list each other, and the next
+	// sighting closes that socket again.
 	//
-	// Discovery is event-driven with no timers or polling:
-	//   - Paired devices, pairing mode (`kcd pair` listen), and explicit
-	//     `kcd pair <id>` intent dial and keep the connection.
-	//   - An unpaired stranger gets exactly one ephemeral dial per unpaired
-	//     era so both sides can list each other (the TCP identity exchange
-	//     is what makes the PC appear on the phone). The next sighting
-	//     closes the socket again while it is still unpaired.
-	// Ephemeral-dial rate limiting: a hostile or buggy peer minting fresh
-	// device IDs per broadcast could otherwise spawn an unbounded dial per
-	// announcement. Stranger dials are throttled globally (1/s) and per
-	// announcer IP (1/5s). Paired and explicit-intent dials bypass this —
-	// paired dials have their own per-device throttle below and intent
-	// dials are user-initiated.
+	// Stranger dials are throttled globally (1/s) and per announcer IP (1/5s):
+	// a hostile or buggy peer minting fresh device IDs per broadcast could
+	// otherwise spawn an unbounded dial per announcement. Paired and
+	// explicit-intent dials bypass this.
 	var dialMu sync.Mutex
 	lastEphemeralGlobal := time.Now().Add(-time.Minute)
 	lastEphemeralByIP := map[string]time.Time{}
@@ -121,8 +115,8 @@ func runTransport(ctx context.Context, cfg *tls.Config, bc *discovery.Broadcaste
 		dev, known := devices.Get(body.DeviceID)
 
 		if known && dev.IsConnected() {
-			// Fresh sighting of a connected device: close it again if it
-			// exists only for the discovery handshake.
+			// A fresh sighting of a connected device closes it again if the
+			// connection only ever existed for the discovery handshake.
 			if shouldEphemeralClose(dev, pairingMode) {
 				logger.Debug("closing ephemeral discovery connection",
 					log.String("device_id", body.DeviceID))
@@ -135,18 +129,17 @@ func runTransport(ctx context.Context, cfg *tls.Config, bc *discovery.Broadcaste
 		}
 
 		if known && dev.State() == device.StatePaired {
-			// Paired sighting proves the peer is alive at the sighted
-			// address. Redial (rate-limited) when disconnected or when
-			// the sighted IP differs (true roam — the live socket is a
-			// half-open zombie). A same-IP sighting on a live socket is
-			// ignored like upstream: phone traffic is event-driven with
-			// long quiet gaps, so read-idle can't tell a zombie from a
-			// healthy session, and redialling churns duplicates the peer
-			// RSTs (split-second flap). Same-IP roam repair arrives via
-			// phone-initiated inbound, which replaces via Connect().
-			// Whoever answers must present the paired certificate (CN +
-			// pinned fingerprint are verified in handleNewConnection) or
-			// setup fails.
+			// A paired sighting proves the peer is alive at the sighted address,
+			// so redial (rate-limited) when disconnected or when the sighted IP
+			// differs — a live socket at a new address is a half-open zombie.
+			//
+			// A same-IP sighting on a live socket is ignored, as upstream does.
+			// Phone traffic is event-driven with long quiet gaps, so read-idle
+			// cannot tell a zombie from a healthy session, and redialling churns
+			// duplicates the peer RSTs. Same-IP roam repair arrives instead via
+			// phone-initiated inbound, which replaces the connection outright.
+			// Whoever answers must present the paired certificate (CN + pinned
+			// fingerprint, verified in handleNewConnection) or setup fails.
 			dev.SetLastSeen(time.Now())
 			if dev.NoteSighting(ip) {
 				dev.ResetReconnectAttempt()
