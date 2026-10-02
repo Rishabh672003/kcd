@@ -4,6 +4,7 @@ package ipc
 // payload uniformly. Each method is a one-line accessor over the
 // payload's deviceId field; the JSON shapes are unchanged.
 func (p DevicePayload) GetDeviceID() string        { return p.DeviceID }
+func (p SftpMountPayload) GetDeviceID() string     { return p.DeviceID }
 func (p SharePayload) GetDeviceID() string         { return p.DeviceID }
 func (p NotifyReplyPayload) GetDeviceID() string   { return p.DeviceID }
 func (p NotifyDismissPayload) GetDeviceID() string { return p.DeviceID }

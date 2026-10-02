@@ -21,6 +21,12 @@ NotifyAccess=main
 # Matches the binary installed by scripts/install.sh.
 ExecStart=%h/.local/bin/kcd daemon
 
+# `systemctl --user reload kcd` sends SIGHUP. The daemon reloads the [commands]
+# table, the notification filters and the log level in place; anything else
+# still needs a restart. Without this line the reload verb fails, because
+# systemd has no way to signal the unit.
+ExecReload=/bin/kill -HUP $MAINPID
+
 # Graceful shutdown: send SIGTERM and give the daemon up to 10 s to finish
 # in-progress file transfers before SIGKILL.
 KillMode=mixed

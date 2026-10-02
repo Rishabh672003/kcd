@@ -57,6 +57,7 @@ These structural constraints must hold at all times:
 | IPC Unix socket | `/run/user/<uid>/kcd/kcd.sock` (`$XDG_RUNTIME_DIR/kcd/kcd.sock`) |
 | Album art cache | `~/.cache/kcd/art/` (`$XDG_CACHE_HOME/kcd/art`) — resolved `kdeconnect://` art URIs, keyed by `kdeArtHash` |
 | Downloaded files | `~/Downloads/kcd/` (overridable via `download_dir` in config) |
+| SFTP mount points | `$XDG_RUNTIME_DIR/kcd/mnt/` (`/run/user/1000/kcd/mnt`; `$XDG_STATE_HOME/kcd/mnt` with no user session) — never under a bulk-deletable user folder, since `rm -rf` descends into a live mount |
 | systemd user unit | `~/.config/systemd/user/kcd.service` |
 
 > **Note:** The socket lives in a `kcd/` subdirectory of the runtime dir, not directly in `/run/user/<uid>/`.
@@ -79,6 +80,7 @@ These structural constraints must hold at all times:
 10. Start transport layer in a goroutine (`runTransport` → TCP listener + discovery broadcaster + mDNS)
 11. Send `READY=1` to `$NOTIFY_SOCKET` if present (systemd sd_notify)
 12. Block on `<-ctx.Done()`
+13. On shutdown, call `SftpPlugin.UnmountAll` (bounded by `shutdownUnmountBudget`). `OnDisconnect` only fires on a dropped connection, so without this every graceful stop leaves mounts live.
 
 ---
 

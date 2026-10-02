@@ -21,12 +21,19 @@ import (
 	"github.com/bethropolis/kcd/internal/plugin"
 	"github.com/bethropolis/kcd/internal/plugins/notification"
 	"github.com/bethropolis/kcd/internal/plugins/runcommand"
+	"github.com/bethropolis/kcd/internal/plugins/sftp"
 	"github.com/bethropolis/kcd/internal/protocol"
 )
 
 // Version is set from main's ldflags-provided version at startup.
 // Defaults to "dev" for local builds without ldflags.
 var Version = "dev"
+
+// shutdownUnmountBudget bounds how long shutdown waits for SFTP mounts to be
+// released. Each Unmount can take up to 13s on its own (3s waiting for sshfs to
+// exit, then a 10s fusermount bound), so the budget -- not the per-mount cost --
+// is what keeps shutdown inside the unit's TimeoutStopSec=10.
+const shutdownUnmountBudget = 5 * time.Second
 
 // syncReconnectBroadcast starts UDP broadcast (reconnect owner) while any
 // paired device is offline, and withdraws it otherwise. Pure state, no
@@ -289,6 +296,16 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	<-ctx.Done()
 
 	logger.Info("kcd daemon shutting down")
+
+	// Release SFTP mounts before returning. OnDisconnect only fires on a
+	// dropped connection, so a graceful stop used to leave every mount live.
+	// Bounded well under the unit's TimeoutStopSec so systemd does not SIGKILL
+	// us part-way through and strand one.
+	if pl, ok := plugins.GetByName("SFTP"); ok {
+		unmountCtx, unmountCancel := context.WithTimeout(context.Background(), shutdownUnmountBudget)
+		pl.(*sftp.SftpPlugin).UnmountAll(unmountCtx)
+		unmountCancel()
+	}
 
 	acquires, misses := protocol.PoolStats()
 	hits := acquires - misses

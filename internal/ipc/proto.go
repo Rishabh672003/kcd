@@ -170,14 +170,28 @@ type StatusResponse struct {
 	Devices        []StatusDevice `json:"devices,omitempty"`
 }
 
+// SftpInfoPayload is used for CmdSftpInfo.
+//
+// ShowPassword is opt-in because the response carries a live credential for
+// the phone's SFTP server; without it the daemon omits the password entirely.
+type SftpInfoPayload struct {
+	DeviceID     string `json:"deviceId"`
+	ShowPassword bool   `json:"showPassword,omitempty"`
+}
+
 // SftpInfoResponse carries cached SFTP connection details returned by CmdSftpInfo.
+//
+// Password is omitted unless the request set ShowPassword.
 type SftpInfoResponse struct {
 	IP       string                  `json:"ip"`
 	Port     json.Number             `json:"port"`
 	User     string                  `json:"user"`
-	Password string                  `json:"password"`
+	Password string                  `json:"password,omitempty"`
 	Path     string                  `json:"path"`
 	Volumes  []StorageVolumeResponse `json:"volumes,omitempty"`
+	Mounted  bool                    `json:"mounted"`
+	// MountPoint is the local directory the device's storage is mounted at.
+	MountPoint string `json:"mountPoint,omitempty"`
 }
 
 // StorageVolumeResponse describes a single browsable storage root on a device.
@@ -186,10 +200,22 @@ type StorageVolumeResponse struct {
 	Path string `json:"path"`
 }
 
+// SftpMountPayload is used for CmdSftpMount and CmdSftpMountLocal.
+//
+// ReadOnly overrides the [sftp] read_only default for this one mount. It has
+// to be a pointer so an absent field is distinguishable from an explicit
+// false, letting the daemon fall back to config rather than silently forcing
+// a writable mount.
+type SftpMountPayload struct {
+	DeviceID string `json:"deviceId"`
+	ReadOnly *bool  `json:"readOnly,omitempty"`
+}
+
 // SftpBrowsePayload is used for CmdSftpBrowse.
 type SftpBrowsePayload struct {
 	DeviceID string `json:"deviceId"`
 	Volume   string `json:"volume,omitempty"`
+	ReadOnly *bool  `json:"readOnly,omitempty"`
 }
 
 // SftpBrowseResponse is returned by CmdSftpBrowse.

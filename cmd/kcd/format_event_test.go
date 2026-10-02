@@ -58,6 +58,21 @@ func TestFormatEventExistingFormats(t *testing.T) {
 			want: "[d1] SFTP credentials received: sftp://x\n",
 		},
 		{
+			name: "sftp mounted",
+			ev:   events.Event{Type: events.TypeSftpMounted, DeviceID: "d1", Payload: map[string]any{"mountPoint": "/mnt/kcd-sftp-d1"}},
+			want: "[d1] SFTP mounted at /mnt/kcd-sftp-d1\n",
+		},
+		{
+			name: "sftp mounted with volume",
+			ev:   events.Event{Type: events.TypeSftpMounted, DeviceID: "d1", Payload: map[string]any{"mountPoint": "/mnt/kcd-sftp-d1", "volume": "/storage/ABCD-1234"}},
+			want: "[d1] SFTP mounted at /mnt/kcd-sftp-d1 (/storage/ABCD-1234)\n",
+		},
+		{
+			name: "sftp unmounted",
+			ev:   events.Event{Type: events.TypeSftpUnmounted, DeviceID: "d1", Payload: map[string]any{"mountPoint": "/mnt/kcd-sftp-d1"}},
+			want: "[d1] SFTP unmounted (was /mnt/kcd-sftp-d1)\n",
+		},
+		{
 			name: "pair requested",
 			ev:   events.Event{Type: events.TypePairRequested, DeviceID: "d1", Payload: map[string]any{"name": "Pixel", "type": "phone", "verificationKey": "12345"}},
 			want: "[d1] pair request from Pixel (phone). code: 12345\n",
@@ -187,6 +202,33 @@ func TestFormatEventNewTypes(t *testing.T) {
 			want: "[d1] contacts: 2 added, 5 pending\n",
 		},
 		{
+			name: "runcommand started",
+			ev:   events.Event{Type: events.TypeRunCommandOutput, DeviceID: "d1", Payload: map[string]any{"id": 7, "key": "uptime", "status": "started"}},
+			want: "[d1] runcommand uptime: running\n",
+		},
+		{
+			name: "runcommand output batch",
+			ev: events.Event{Type: events.TypeRunCommandOutput, DeviceID: "d1", Payload: map[string]any{
+				"id": 7, "key": "uptime", "status": "output",
+				"stdout": []any{"up 3 days"}, "stderr": []any{"warn: x"},
+			}},
+			want: "[d1] runcommand uptime: out: up 3 days | err: warn: x\n",
+		},
+		{
+			name: "runcommand finished",
+			ev: events.Event{Type: events.TypeRunCommandOutput, DeviceID: "d1", Payload: map[string]any{
+				"id": 7, "key": "uptime", "status": "finished", "success": true, "output": "up 3 days",
+			}},
+			want: "[d1] runcommand uptime: up 3 days\n",
+		},
+		{
+			name: "runcommand finished without output",
+			ev: events.Event{Type: events.TypeRunCommandOutput, DeviceID: "d1", Payload: map[string]any{
+				"id": 7, "key": "lock", "status": "finished", "success": false, "output": "",
+			}},
+			want: "[d1] runcommand lock: failed\n",
+		},
+		{
 			name: "contacts vcards phase drops a zero skip count",
 			ev:   events.Event{Type: events.TypeContactsUpdated, DeviceID: "d1", Payload: map[string]any{"phase": "vcards", "stored": 4, "skipped": 0}},
 			want: "[d1] contacts: 4 saved\n",
@@ -212,7 +254,7 @@ func TestFormatEventNewTypes(t *testing.T) {
 		},
 		{
 			name: "device added keeps type token first",
-			ev:   events.Event{Type: events.TypeDeviceAdded, DeviceID: "d1", Payload: "Pixel 8"},
+			ev:   events.Event{Type: events.TypeDeviceAdded, DeviceID: "d1", Payload: map[string]any{"id": "d1", "name": "Pixel 8", "type": "phone", "state": "UNPAIRED", "connected": false}},
 			want: "[d1] device.added: Pixel 8\n",
 		},
 		{
@@ -251,7 +293,9 @@ func TestFormatEventStateSnapshotStaysBare(t *testing.T) {
 func TestFormatEventSurvivesBadPayloads(t *testing.T) {
 	types := []events.EventType{
 		events.TypeBatteryUpdate, events.TypeBatteryThreshold, events.TypeNotification,
-		events.TypeSftpMount, events.TypePairAccepted, events.TypeMprisUpdate,
+		events.TypeSftpMount, events.TypeSftpMounted, events.TypeSftpUnmounted,
+		events.TypeRunCommandOutput,
+		events.TypePairAccepted, events.TypeMprisUpdate,
 		events.TypeSMSIncoming, events.TypeSMSAttachment, events.TypePingReceived,
 		events.TypeConnectivityUpdate, events.TypeTelephonyRinging, events.TypeTelephonyMissed,
 		events.TypeTelephonyTalking, events.TypeTelephonyCanceled, events.TypeVolumeUpdate,

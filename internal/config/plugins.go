@@ -1,9 +1,6 @@
 package config
 
 import (
-	"os"
-	"path/filepath"
-
 	"github.com/bethropolis/kcd/internal/protocol"
 )
 
@@ -78,6 +75,9 @@ type SFTPConfig struct {
 	AutoOpen               bool     `toml:"auto_open"`
 	OpenCommand            string   `toml:"open_command"`
 	ExtraSshfsOpts         []string `toml:"extra_sshfs_opts"`
+	// ReadOnly mounts the device's filesystem read-only by default. --ro on a
+	// single mount request overrides this either way.
+	ReadOnly bool `toml:"read_only"`
 }
 
 type PingConfig struct {
@@ -163,8 +163,7 @@ func (c *ShareConfig) Defaults() {
 }
 
 func (c *SFTPConfig) Defaults() {
-	home, _ := os.UserHomeDir()
-	c.MountDir = filepath.Join(home, "Downloads", "kcd", "mnt")
+	c.MountDir = DefaultMountDir()
 	c.CredentialsTimeoutSecs = 20
 	c.KeepaliveIntervalSecs = 15
 	c.KeepaliveCount = 3

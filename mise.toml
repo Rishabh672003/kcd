@@ -1,5 +1,8 @@
 [tools]
-hk = "latest"
+# Pinned to the version hk.pkl amends. With "latest" a mise upgrade could pull
+# hk forward of the config's own `package://.../hk@2.4.0` import, and the check
+# steps would stop resolving rather than just reporting differently.
+hk = "2.4.0"
 # Pinned to match .github/workflows/ci.yml (golangci-lint-action v9, v2.11).
 # Bump both together; a local version ahead of CI means local checks can pass
 # while CI fails.

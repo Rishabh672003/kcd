@@ -89,6 +89,26 @@ type DeviceInfo struct {
 	LastPort int    `json:"last_port,omitempty"`
 }
 
+// Info builds the serialisable view of a device, matching what the devices
+// command and state.snapshot expose.
+func (d *Device) Info() DeviceInfo {
+	info := DeviceInfo{
+		ID:        d.ID(),
+		Name:      d.Name(),
+		Type:      d.Type,
+		State:     d.State(),
+		CertFP:    d.CertFP,
+		LastSeen:  d.LastSeen(),
+		Connected: d.IsConnected(),
+		LastPort:  d.LastPort(),
+	}
+	// net.IP.String() on nil renders "<nil>" -- store empty instead.
+	if ip := d.LastIP(); ip != nil {
+		info.LastIP = ip.String()
+	}
+	return info
+}
+
 // DialTarget returns the persisted dial target for auto-dial after a
 // restart. A garbage IP yields nil (no target); an out-of-range port
 // yields 0 and callers fall back to the default port. The state file is

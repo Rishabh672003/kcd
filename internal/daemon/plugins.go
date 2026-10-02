@@ -53,7 +53,7 @@ func setupPlugins(cfg *config.Config, bus *events.Bus, tlsCfg *tls.Config, logge
 		plugins.Register(share.NewSharePlugin(cfg.DownloadDir, cfg.Share, tlsCfg, bus, logger, sidechannel))
 	}
 	if cfg.Plugins.RunCommand {
-		plugins.Register(runcommand.NewRunCommandPlugin(cfg.Commands, cfg.CommandsPerDevice, logger))
+		plugins.Register(runcommand.NewRunCommandPlugin(cfg.Commands, cfg.CommandsPerDevice, bus, logger))
 	}
 	if cfg.Plugins.Ping {
 		plugins.Register(ping.NewPingPlugin(cfg.Ping, bus, logger, cfg.Notifications))

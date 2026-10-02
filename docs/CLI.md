@@ -23,9 +23,20 @@ These flags apply to every command:
 
 Edit `$XDG_CONFIG_HOME/kcd/kcd.toml` (default `~/.config/kcd/kcd.toml`).
 All settings are optional; see the annotated example in the packaging directory.
-Apply changes with `systemctl --user restart kcd` (or restart `kcd daemon`
-when running it directly). Timing, storage and notification branding settings
-require a restart; reloading notification filters alone does not apply them.
+
+Changes take effect either by reload or by restart:
+
+| What changed | How to apply |
+|---|---|
+| `[commands]` / `[commands_per_device]` | `systemctl --user reload kcd` |
+| `[notifications]` filters | `systemctl --user reload kcd` |
+| `log_level` | `systemctl --user reload kcd` |
+| Everything else — network timing, storage paths, plugin toggles, branding | `systemctl --user restart kcd` |
+
+A reload re-reads the file and applies only those three; the rest of the
+configuration is captured at startup. Running the daemon directly, send
+`SIGHUP` (`kill -HUP <pid>`) instead. Notification *branding*
+(`[notifications].app_name`) is not reloaded — only the per-app filters are.
 
 | Section | Settings and defaults |
 |---|---|
@@ -699,24 +710,38 @@ kcd watch --json --events=sftp.mount | jq -r 'select(.type=="sftp.mount") | .pay
 Show cached SFTP connection details for a paired device, including available storage volumes:
 
 ```
-kcd sftp info <device-id> [--json]
+kcd sftp info <device-id> [--json] [--show-password]
 ```
+
+The password is a working credential for the phone's SFTP server, so it is
+masked by default in both the human and `--json` output. Pass `--show-password`
+to include it, and note that the `sftp.mount` event always carries it — a
+client that needs to mount can take the credentials from the event stream
+instead of asking for them.
 
 **Example output**
 
 ```
-Device: a1b2c3d4_e5f6_7890_abcd_ef1234567890 (Pixel 8 Pro)
-IP:     192.168.1.50
-Port:   8022
-User:   sftp-user
+IP:       192.168.1.50
+Port:     8022
+User:     sftp-user
 Password: ********
+Path:     /storage/emulated/0
+Mounted:  yes (/run/user/1000/kcd/mnt/kcd-sftp-a1b2c3d4)
 
-Volumes:
-  1. Internal shared storage  →  /storage/emulated/0
-  2. SD card                  →  /storage/ABCD-1234
+Storage volumes:
+  Internal shared storage  /storage/emulated/0
+  SD card  /storage/ABCD-1234
 ```
 
-If the phone returned an error (e.g. storage permission not granted), the `errorMessage` field is shown instead.
+`Mounted:` reports the current mount state, so a client or script can check it
+without touching `/proc`. Subscribe to the `sftp.mounted` and `sftp.unmounted`
+events to be told when it changes.
+
+A failed request is not shown here: when the phone returns an error (e.g.
+storage permission not granted) the credentials are never cached, so `info`
+reports no cached credentials. The error itself arrives on the `sftp.mount`
+event as `{"error": "..."}`.
 
 ### sftp volumes
 
@@ -744,17 +769,53 @@ Request credentials and immediately mount the phone's filesystem using `sshfs`.
 kcd sftp mount <device-id>
 ```
 
-The mount point is printed to stdout. Unmount with `fusermount -u <mountpoint>`.
+Waits up to `[sftp] credentials_timeout_secs` for the phone to start its SFTP
+server. If it does not answer, the phone is either not running KDE Connect or
+has not granted kcd file access (on Android, enable file access for KDE
+Connect) — the CLI's own deadline is derived from that same setting, so you get
+that message rather than a socket timeout.
+
+The mount point is printed to stdout. Mounting is idempotent: if the device
+is already mounted, the existing mount point is returned and `sshfs` is not run
+again, so repeating the command is a cheap way to re-open the file manager.
+
+```
+kcd sftp mount <device-id> [--ro] [--no-ro]
+```
+
+`--ro` mounts read-only, so writes and deletions fail locally instead of
+reaching the phone. `--no-ro` forces writable when `[sftp] read_only = true`.
+Neither means the configured default applies. A mode cannot be changed on an
+existing mount, so unmount first to switch.
 
 ### sftp unmount
 
 Cleanly unmount a previously mounted phone filesystem.
 
-    kcd sftp unmount <device-id>
+```
+kcd sftp unmount <device-id>
+```
 
 Calls `fusermount3` (or `fusermount` on older systems) and removes the
-temporary mount point directory. Returns an error if the device was never
-mounted in this daemon session.
+mount point directory. Failures are distinguishable so a client can react
+to each:
+
+| Error contains | Meaning |
+|---|---|
+| `not mounted` | Nothing is mounted for this device. Any leftover mount directory was removed as part of this |
+| `stale SFTP mount at <path> could not be released` | The mount is still in the kernel but `fusermount` could not detach it; retry, or unmount by path |
+| _(none)_ | Unmounted cleanly |
+
+Unmount is idempotent. A mount that has already gone — its FUSE connection
+died, or it was released by hand — is reported as unmounted and the daemon
+forgets it, rather than retrying forever against a mount that no longer
+exists. A mount that is still present but unresponsive is retried with a lazy
+unmount, which detaches it.
+
+Mounts survive a daemon restart. The daemon treats the kernel's mount table
+as the source of truth and its own record as a cache, so a mount made before a
+restart is still reported as mounted, is adopted for cleanup, and can be
+unmounted by device id as usual.
 
 ### sftp browse
 
@@ -783,7 +844,7 @@ specified volume via sshfs, opening it in the default file manager:
 ```
 $ kcd sftp browse a1b2c3d4 "SD card"
 Requesting SFTP credentials from phone (waiting up to 20s)…
-Mounted at: /home/user/Downloads/kcd/mnt/kcd-sftp-a1b2c3d4
+Mounted at: /run/user/1000/kcd/mnt/kcd-sftp-a1b2c3d4
 ```
 
 The volume argument is resolved in this order:
@@ -1004,7 +1065,7 @@ kcd watch [--events <type,...>] [--json]
 
 | Event type | Description |
 |---|---|
-| `device.added` | A new device was seen for the first time |
+| `device.added` | A new device was seen for the first time. Payload is the full device record (`id`, `name`, `type`, `state`, `connected`, `last_seen`), not just the name |
 | `device.removed` | A device was unpaired and removed |
 | `device.connected` | A device established a TCP connection |
 | `device.disconnected` | A device's connection dropped |
@@ -1026,6 +1087,9 @@ kcd watch [--events <type,...>] [--json]
 | `volume.update` | Device volume changed: `{name, volume, muted}` |
 | `mpris.update` | Now playing: `{player, title, artist, album, isPlaying, pos, length, volume}` |
 | `sftp.mount` | SFTP credentials: `{uri, ip, port, user, password, path, multiPaths, pathNames, errorMessage}` |
+| `sftp.mounted` | Mount finished: `{mountPoint, volume?}` |
+| `sftp.unmounted` | Mount released: `{mountPoint}` |
+| `runcommand.output` | Local command execution: `{id, key, status, stdout?, stderr?, output?, success?, truncated?}`, where `status` is `started`, `output` or `finished`. Output batches arrive only while a client is subscribed |
 | `battery.threshold` | Battery low/full alert: `{charge, charging, event}` |
 | `telephony.talking` | Call in progress: `{contactName, phoneNumber}` |
 | `sms.incoming` | SMS/MMS received: `{body, sender, date, thread_id, read}` |

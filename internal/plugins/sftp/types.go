@@ -2,6 +2,8 @@ package sftp
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -18,17 +20,24 @@ type SftpPlugin struct {
 	mu          sync.RWMutex
 	lastBody    map[string]SftpBody
 	mountPoints map[string]string // deviceID -> local mountPoint path
-	mountPIDs   map[string]int    // deviceID -> sshfs PID for graceful shutdown
+	// mountReadOnly records the mode each mount was created with, so a later
+	// --ro request against an existing mount can report what it actually is.
+	mountReadOnly map[string]bool
+	// warnedDirs records mount directories the document-folder warning has
+	// already fired for, so it is logged once per location per run.
+	warnedDirs map[string]bool
+	mountPIDs  map[string]int // deviceID -> sshfs PID for graceful shutdown
 }
 
 func NewSftpPlugin(cfg config.SFTPConfig, bus *events.Bus, logger log.Logger) *SftpPlugin {
 	return &SftpPlugin{
-		cfg:         cfg,
-		bus:         bus,
-		logger:      logger.With(log.String("plugin", "sftp")),
-		lastBody:    make(map[string]SftpBody),
-		mountPoints: make(map[string]string),
-		mountPIDs:   make(map[string]int),
+		cfg:           cfg,
+		bus:           bus,
+		logger:        logger.With(log.String("plugin", "sftp")),
+		lastBody:      make(map[string]SftpBody),
+		mountPoints:   make(map[string]string),
+		mountReadOnly: make(map[string]bool),
+		mountPIDs:     make(map[string]int),
 	}
 }
 
@@ -61,16 +70,54 @@ type StorageVolume struct {
 }
 
 // SftpInfo holds the complete cached SFTP connection details for a device.
+//
+// Password is a live credential for the phone's SFTP server, so it is left
+// empty unless the caller explicitly asked for it (see Info). omitempty keeps
+// the field out of the JSON entirely rather than emitting an empty string,
+// so a masked response cannot be mistaken for a device with no password.
 type SftpInfo struct {
 	IP       string          `json:"ip"`
 	Port     json.Number     `json:"port"`
 	User     string          `json:"user"`
-	Password string          `json:"password"`
+	Password string          `json:"password,omitempty"`
 	Path     string          `json:"path"`
 	Volumes  []StorageVolume `json:"volumes,omitempty"`
+
+	// Mounted reports whether this device's filesystem is currently mounted,
+	// and MountPoint is where. Clients use it to render a mount toggle
+	// without inspecting the host's mount table.
+	Mounted    bool   `json:"mounted"`
+	MountPoint string `json:"mountPoint,omitempty"`
 }
 
 func (p *SftpPlugin) Name() string            { return "SFTP" }
 func (p *SftpPlugin) Timeout() time.Duration  { return 5 * time.Second }
 func (p *SftpPlugin) IncomingTypes() []string { return []string{"kdeconnect.sftp"} }
 func (p *SftpPlugin) OutgoingTypes() []string { return []string{"kdeconnect.sftp.request"} }
+
+// mountPointFor is the one mount path the daemon creates for a device.
+// Derived rather than looked up, so it still identifies leftovers when the
+// cache is empty -- which is exactly the state after a restart.
+//
+// An empty MountDir falls back to the same default config.Defaults() uses,
+// rather than to a temp directory: the daemon never writes the config file,
+// so `mount_dir = ""` is an explicit request for the default, not a way to
+// ask for somewhere that gets swept up by periodic tmp cleaning.
+func (p *SftpPlugin) mountPointFor(deviceID string) string {
+	baseDir := p.cfg.MountDir
+	if baseDir == "" {
+		baseDir = config.DefaultMountDir()
+	}
+	return filepath.Join(baseDir, "kcd-sftp-"+deviceID)
+}
+
+// legacyMountPointFor is where mounts lived before the default moved out of
+// ~/Downloads. Mounts there outlive the daemon, so Unmount has to keep being
+// able to find and release them.
+func legacyMountPointFor(deviceID string) string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, "Downloads", "kcd", "mnt", "kcd-sftp-"+deviceID)
+}

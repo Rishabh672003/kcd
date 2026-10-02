@@ -1,20 +1,29 @@
 package client
 
 import (
+	"time"
+
 	"encoding/json"
 
 	"github.com/bethropolis/kcd/internal/ipc"
 )
 
 // SftpMount requests the daemon to initiate an SFTP connection to the remote device.
-func (c *Client) SftpMount(deviceID string) error {
-	_, err := c.Call(ipc.CmdSftpMount, ipc.DevicePayload{DeviceID: deviceID})
+//
+// readOnly overrides the daemon's [sftp] read_only default for this request.
+// Pass a pointer to true for --ro, a pointer to false to force writable, or
+// nil to use the configured default.
+func (c *Client) SftpMount(deviceID string, readOnly *bool) error {
+	_, err := c.Call(ipc.CmdSftpMount, ipc.SftpMountPayload{DeviceID: deviceID, ReadOnly: readOnly})
 	return err
 }
 
 // SftpInfo returns the cached SFTP connection details for a device.
-func (c *Client) SftpInfo(deviceID string) (*ipc.SftpInfoResponse, error) {
-	resp, err := c.Call(ipc.CmdSftpInfo, ipc.DevicePayload{DeviceID: deviceID})
+//
+// The password is a live credential for the phone's SFTP server and is only
+// returned when showPassword is true; otherwise the daemon omits it.
+func (c *Client) SftpInfo(deviceID string, showPassword bool) (*ipc.SftpInfoResponse, error) {
+	resp, err := c.Call(ipc.CmdSftpInfo, ipc.SftpInfoPayload{DeviceID: deviceID, ShowPassword: showPassword})
 	if err != nil {
 		return nil, err
 	}
@@ -41,8 +50,8 @@ func (c *Client) SftpVolumes(deviceID string) ([]ipc.StorageVolumeResponse, erro
 // SftpMountLocal requests the daemon to request SFTP credentials from the
 // phone, wait for the response, mount via sshfs, and open the result in
 // the default file manager. Returns the local browse path on success.
-func (c *Client) SftpMountLocal(deviceID string) (string, error) {
-	resp, err := c.Call(ipc.CmdSftpMountLocal, ipc.DevicePayload{DeviceID: deviceID})
+func (c *Client) SftpMountLocal(deviceID string, readOnly *bool) (string, error) {
+	resp, err := c.callWithTimeout(ipc.CmdSftpMountLocal, ipc.SftpMountPayload{DeviceID: deviceID, ReadOnly: readOnly}, c.sftpTimeout())
 	if err != nil {
 		return "", err
 	}
@@ -65,11 +74,12 @@ func (c *Client) SftpUnmount(deviceID string) error {
 // available volumes (volume arg empty) or mounts the specified volume.
 // volume can be an index (0-based), volume name, or path.
 // Returns the mount path (empty if listing) and available volumes.
-func (c *Client) SftpBrowse(deviceID string, volume string) (string, []ipc.StorageVolumeResponse, error) {
-	resp, err := c.Call(ipc.CmdSftpBrowse, ipc.SftpBrowsePayload{
+func (c *Client) SftpBrowse(deviceID string, volume string, readOnly *bool) (string, []ipc.StorageVolumeResponse, error) {
+	resp, err := c.callWithTimeout(ipc.CmdSftpBrowse, ipc.SftpBrowsePayload{
 		DeviceID: deviceID,
 		Volume:   volume,
-	})
+		ReadOnly: readOnly,
+	}, c.sftpTimeout())
 	if err != nil {
 		return "", nil, err
 	}
@@ -78,4 +88,12 @@ func (c *Client) SftpBrowse(deviceID string, volume string) (string, []ipc.Stora
 		_ = json.Unmarshal(resp.Data, &result)
 	}
 	return result.Path, result.Volumes, nil
+}
+
+// sftpTimeout is the deadline for calls that wait on the phone.
+func (c *Client) sftpTimeout() time.Duration {
+	if c.SftpTimeout > 0 {
+		return c.SftpTimeout
+	}
+	return 60 * time.Second
 }

@@ -19,10 +19,73 @@ func truncate(s string, max int) string {
 	return s
 }
 
+// runCommandLabel names the execution, falling back to the id when the plugin
+// published no key.
+func runCommandLabel(payload map[string]any) string {
+	if key := str(payload, "key"); key != "" {
+		return oneLine(truncate(key, 40))
+	}
+	return fmt.Sprintf("#%v", payload["id"])
+}
+
+// runCommandDetail renders one runcommand event body. A batch carries separate
+// stdout/stderr line lists; the lifecycle events carry a single `output`
+// transcript. Branching on status rather than probing for `success` matters:
+// an absent boolean would otherwise make a start look like a failure.
+func runCommandDetail(payload map[string]any) string {
+	if lines, ok := payload["stdout"].([]any); ok {
+		groups := make([]string, 0, 2)
+		if out := runCommandLines(lines, "out"); out != "" {
+			groups = append(groups, out)
+		}
+		if errOut := runCommandLines(payload["stderr"], "err"); errOut != "" {
+			groups = append(groups, errOut)
+		}
+		return strings.Join(groups, " | ")
+	}
+	if str(payload, "status") == "started" {
+		return "running"
+	}
+	if text := oneLine(truncate(str(payload, "output"), 200)); text != "" {
+		return text
+	}
+	if ok, _ := payload["success"].(bool); ok {
+		return "ok"
+	}
+	return "failed"
+}
+
+func runCommandLines(raw any, tag string) string {
+	lines, ok := raw.([]any)
+	if !ok || len(lines) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(lines))
+	for _, l := range lines {
+		if s, ok := l.(string); ok && s != "" {
+			parts = append(parts, tag+": "+oneLine(s))
+		}
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.Join(parts, " | ")
+}
+
 // oneLine collapses newlines so a multi-line message cannot break the stream's
 // line-per-event shape.
 func oneLine(s string) string {
 	return strings.Join(strings.Fields(s), " ")
+}
+
+// volumeSuffix renders the optional volume an event was mounted for. The
+// daemon omits the key when the phone picked the volume itself, so an absent
+// key has to render as nothing rather than as a stray separator.
+func volumeSuffix(payload map[string]any) string {
+	if v, ok := payload["volume"].(string); ok && v != "" {
+		return " (" + v + ")"
+	}
+	return ""
 }
 
 // decodePayload re-decodes an event payload into a concrete type. The daemon
@@ -101,6 +164,12 @@ func formatEvent(ev events.Event) string {
 
 	case events.TypeSftpMount:
 		return fmt.Sprintf("[%s] SFTP credentials received: %s\n", ev.DeviceID, payload["uri"])
+
+	case events.TypeSftpMounted:
+		return fmt.Sprintf("[%s] SFTP mounted at %s%s\n", ev.DeviceID, payload["mountPoint"], volumeSuffix(payload))
+
+	case events.TypeSftpUnmounted:
+		return fmt.Sprintf("[%s] SFTP unmounted (was %s)\n", ev.DeviceID, payload["mountPoint"])
 
 	case events.TypePairRequested:
 		return fmt.Sprintf("[%s] pair request from %s (%s). code: %v\n", ev.DeviceID, payload["name"], payload["type"], payload["verificationKey"])
@@ -181,6 +250,9 @@ func formatEvent(ev events.Event) string {
 		}
 		return fmt.Sprintf("[%s] volume: %s %v%%\n", ev.DeviceID, name, payload["volume"])
 
+	case events.TypeRunCommandOutput:
+		return fmt.Sprintf("[%s] runcommand %s: %s\n", ev.DeviceID, runCommandLabel(payload), runCommandDetail(payload))
+
 	case events.TypeContactsUpdated:
 		if str(payload, "phase") == "vcards" {
 			stored, _ := num(payload, "stored")
@@ -195,7 +267,14 @@ func formatEvent(ev events.Event) string {
 	// device.connected / device.added keep the bare type token as the first
 	// field so anything grepping for it still matches; the detail follows.
 	case events.TypeDeviceAdded:
-		name, _ := ev.Payload.(string)
+		// The payload is a full device view. Still tolerating a bare string
+		// keeps the renderer working if a payload ever predates that change.
+		var name string
+		if s, ok := ev.Payload.(string); ok {
+			name = s
+		} else if info, ok := ev.Payload.(map[string]any); ok {
+			name = str(info, "name")
+		}
 		if name == "" {
 			break
 		}

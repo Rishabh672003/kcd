@@ -33,7 +33,30 @@ func getClient(c *cli.Context) (*client.Client, error) {
 		SocketPath:        cfg.SocketPath,
 		Timeout:           5 * time.Second,
 		PairListenTimeout: pairListenDeadline(config.Duration(cfg.Pairing.ListenTimeout)),
+		SftpTimeout:       sftpCredentialDeadline(cfg.SFTP.CredentialsTimeoutSecs),
 	}, nil
+}
+
+// sftpCredentialDeadline is the client's deadline for the calls that wait on
+// the phone's SFTP response. It has to outlast the daemon's own wait, or the
+// socket deadline fires first and the user is told the connection timed out
+// instead of being told the phone never answered -- which is the actual problem
+// when the phone has not granted kcd file access.
+func sftpCredentialDeadline(seconds int) time.Duration {
+	const overhead = 10 * time.Second
+	const maxDuration = time.Duration(1<<63 - 1)
+	if seconds <= 0 {
+		seconds = 20
+	}
+	// Bound the seconds before converting, not after: seconds comes straight
+	// from the config file, and time.Duration(seconds)*time.Second overflows
+	// for any value past ~292 years, which would wrap to a negative deadline
+	// and time out instantly.
+	const maxSeconds = int64(maxDuration/time.Second) - int64(overhead/time.Second)
+	if int64(seconds) > maxSeconds {
+		return maxDuration
+	}
+	return time.Duration(seconds)*time.Second + overhead
 }
 
 // pairListenDeadline adds response overhead without overflowing a duration.

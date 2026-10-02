@@ -26,7 +26,7 @@ func (p *SftpPlugin) RequestMount(dev device.Sender) error {
 // RequestAndMount sends the SFTP request, waits for the Android device to
 // respond with credentials (up to 20 s), mounts the filesystem via sshfs,
 // and returns the local path the user should open.
-func (p *SftpPlugin) RequestAndMount(ctx context.Context, dev device.Sender) (string, error) {
+func (p *SftpPlugin) RequestAndMount(ctx context.Context, dev device.Sender, readOnly bool) (string, error) {
 	if p.bus == nil {
 		return "", fmt.Errorf("event bus not available")
 	}
@@ -41,10 +41,7 @@ func (p *SftpPlugin) RequestAndMount(ctx context.Context, dev device.Sender) (st
 
 	p.logger.Info("SFTP request sent, waiting for phone response", log.String("device", dev.ID()))
 
-	timeout := time.Duration(p.cfg.CredentialsTimeoutSecs) * time.Second
-	if timeout == 0 {
-		timeout = 20 * time.Second
-	}
+	timeout := p.credentialsTimeout()
 	deadline, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -63,10 +60,10 @@ func (p *SftpPlugin) RequestAndMount(ctx context.Context, dev device.Sender) (st
 			if !exists {
 				return "", fmt.Errorf("credentials missing after event (internal error)")
 			}
-			return p.mountWithBody(ctx, dev.ID(), body, "")
+			return p.mountWithBody(ctx, dev.ID(), body, "", readOnly)
 
 		case <-deadline.Done():
-			return "", fmt.Errorf("timed out after %s waiting for SFTP response — is the KDE Connect app open on the phone?", timeout)
+			return "", fmt.Errorf("timed out after %s waiting for SFTP response — the phone did not start its SFTP server. Either the KDE Connect app is not open, or it has not granted kcd file access (on Android, enable file access for KDE Connect)", timeout)
 		}
 	}
 }
@@ -75,7 +72,7 @@ func (p *SftpPlugin) RequestAndMount(ctx context.Context, dev device.Sender) (st
 // mounts the specified volume. If volumePath is empty, the available volumes
 // are returned without mounting (list mode). The caller is responsible for
 // closing the returned closer when done with the mounted path.
-func (p *SftpPlugin) RequestAndMountVolume(ctx context.Context, dev device.Sender, volumePath string) (mountPath string, volumes []StorageVolume, err error) {
+func (p *SftpPlugin) RequestAndMountVolume(ctx context.Context, dev device.Sender, volumePath string, readOnly bool) (mountPath string, volumes []StorageVolume, err error) {
 	if p.bus == nil {
 		return "", nil, fmt.Errorf("event bus not available")
 	}
@@ -89,10 +86,7 @@ func (p *SftpPlugin) RequestAndMountVolume(ctx context.Context, dev device.Sende
 
 	p.logger.Info("SFTP request sent, waiting for phone response", log.String("device", dev.ID()))
 
-	timeout := time.Duration(p.cfg.CredentialsTimeoutSecs) * time.Second
-	if timeout == 0 {
-		timeout = 20 * time.Second
-	}
+	timeout := p.credentialsTimeout()
 	deadline, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -118,52 +112,66 @@ func (p *SftpPlugin) RequestAndMountVolume(ctx context.Context, dev device.Sende
 				return "", vols, nil
 			}
 
-			path, err := p.mountWithBody(ctx, dev.ID(), body, volumePath)
+			path, err := p.mountWithBody(ctx, dev.ID(), body, volumePath, readOnly)
 			if err != nil {
 				return "", nil, err
 			}
 			return path, vols, nil
 
 		case <-deadline.Done():
-			return "", nil, fmt.Errorf("timed out after %s waiting for SFTP response — is the KDE Connect app open on the phone?", timeout)
+			return "", nil, fmt.Errorf("timed out after %s waiting for SFTP response — the phone did not start its SFTP server. Either the KDE Connect app is not open, or it has not granted kcd file access (on Android, enable file access for KDE Connect)", timeout)
 		}
 	}
 }
 
 // MountLocally mounts using previously cached credentials.
 // Prefer RequestAndMount for a one-step experience.
-func (p *SftpPlugin) MountLocally(ctx context.Context, deviceID string) (string, error) {
+func (p *SftpPlugin) MountLocally(ctx context.Context, deviceID string, readOnly bool) (string, error) {
 	p.mu.RLock()
 	body, ok := p.lastBody[deviceID]
 	p.mu.RUnlock()
 	if !ok {
 		return "", fmt.Errorf("no SFTP credentials cached for device %s — use 'kcd sftp mount' which requests them automatically", deviceID)
 	}
-	return p.mountWithBody(ctx, deviceID, body, "")
+	return p.mountWithBody(ctx, deviceID, body, "", readOnly)
 }
 
 // Info returns the cached SFTP connection details for a device.
 // Returns nil if no credentials have been received yet.
-func (p *SftpPlugin) Info(deviceID string) *SftpInfo {
+//
+// includePassword gates the credential: it is a working password for the
+// phone's SFTP server, and `kcd sftp info` is an informational command whose
+// output routinely lands in scrollback, logs and $(...) captures. Callers that
+// genuinely need it (mounting) get credentials from the sftp.mount event
+// instead, which is unaffected by this gate.
+//
+// Returns nil if no credentials have been received yet, even for a device that
+// is still mounted -- mount state outlives the credential cache, which is
+// cleared on disconnect.
+func (p *SftpPlugin) Info(deviceID string, includePassword bool) *SftpInfo {
 	p.mu.RLock()
-	defer p.mu.RUnlock()
 	body, ok := p.lastBody[deviceID]
+	var volumes []StorageVolume
+	if ok {
+		volumes = p.buildVolumes(body)
+	}
+	p.mu.RUnlock()
+
 	if !ok {
 		return nil
 	}
+	mountPoint := p.MountedPath(deviceID)
 	info := &SftpInfo{
-		IP:       body.IP,
-		Port:     body.Port,
-		User:     body.User,
-		Password: body.Password,
-		Path:     body.Path,
+		IP:         body.IP,
+		Port:       body.Port,
+		User:       body.User,
+		Path:       body.Path,
+		Volumes:    volumes,
+		Mounted:    mountPoint != "",
+		MountPoint: mountPoint,
 	}
-	for i, mp := range body.MultiPaths {
-		name := mp
-		if i < len(body.PathNames) {
-			name = body.PathNames[i]
-		}
-		info.Volumes = append(info.Volumes, StorageVolume{Name: name, Path: mp})
+	if includePassword {
+		info.Password = body.Password
 	}
 	return info
 }
@@ -198,8 +206,68 @@ func (p *SftpPlugin) Volumes(deviceID string) []StorageVolume {
 }
 
 // MountedPath returns the local mount point for a device, or "" if not mounted.
+//
+// Reconciles against the kernel mount table on a cache miss, so a mount made
+// before a daemon restart is still reported as mounted.
 func (p *SftpPlugin) MountedPath(deviceID string) string {
 	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.mountPoints[deviceID]
+	mountPoint, cached := p.mountPoints[deviceID]
+	p.mu.RUnlock()
+	if cached {
+		return mountPoint
+	}
+
+	// The kernel is the source of truth. The configured location first, then
+	// the location mounts used to default to, so a mount made before the
+	// default moved is still found rather than orphaned.
+	if mountPoint = p.adoptIfMounted(deviceID, p.mountPointFor(deviceID)); mountPoint != "" {
+		return mountPoint
+	}
+	if legacy := legacyMountPointFor(deviceID); legacy != "" && legacy != p.mountPointFor(deviceID) {
+		if mountPoint = p.adoptIfMounted(deviceID, legacy); mountPoint != "" {
+			p.logger.Info("adopted SFTP mount left at the previous default location",
+				log.String("device_id", deviceID),
+				log.String("mount_point", mountPoint),
+			)
+			return mountPoint
+		}
+	}
+	return ""
+}
+
+// adoptIfMounted caches mountPoint as this device's mount when the kernel
+// reports it, and returns it; otherwise returns "".
+func (p *SftpPlugin) adoptIfMounted(deviceID, mountPoint string) string {
+	if !mountExists(mountPoint) {
+		return ""
+	}
+	p.mu.Lock()
+	p.mountPoints[deviceID] = mountPoint
+	p.mu.Unlock()
+	p.logger.Debug("adopted SFTP mount left by a previous daemon session",
+		log.String("device_id", deviceID),
+		log.String("mount_point", mountPoint),
+	)
+	return mountPoint
+}
+
+// IsMounted reports whether a device's filesystem is currently mounted.
+func (p *SftpPlugin) IsMounted(deviceID string) bool {
+	return p.MountedPath(deviceID) != ""
+}
+
+// credentialsTimeout is how long to wait for the phone's SFTP response. The
+// CLI derives its own socket deadline from the same configured value, so the
+// daemon reports the timeout rather than the client reporting a dead socket.
+func (p *SftpPlugin) credentialsTimeout() time.Duration {
+	if p.cfg.CredentialsTimeoutSecs <= 0 {
+		return 20 * time.Second
+	}
+	return time.Duration(p.cfg.CredentialsTimeoutSecs) * time.Second
+}
+
+// ReadOnlyByDefault reports the configured read-only default, used when a
+// mount request does not override it.
+func (p *SftpPlugin) ReadOnlyByDefault() bool {
+	return p.cfg.ReadOnly
 }
