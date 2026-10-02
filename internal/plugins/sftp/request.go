@@ -156,30 +156,28 @@ func (p *SftpPlugin) MountLocally(ctx context.Context, deviceID string) (string,
 // cleared on disconnect.
 func (p *SftpPlugin) Info(deviceID string, includePassword bool) *SftpInfo {
 	p.mu.RLock()
-	defer p.mu.RUnlock()
 	body, ok := p.lastBody[deviceID]
+	var volumes []StorageVolume
+	if ok {
+		volumes = p.buildVolumes(body)
+	}
+	p.mu.RUnlock()
+
 	if !ok {
 		return nil
 	}
+	mountPoint := p.MountedPath(deviceID)
 	info := &SftpInfo{
-		IP:   body.IP,
-		Port: body.Port,
-		User: body.User,
-		Path: body.Path,
-		// Read under the same lock as the credential cache so the two halves
-		// of the response cannot disagree.
-		Mounted:    p.mountPoints[deviceID] != "",
-		MountPoint: p.mountPoints[deviceID],
+		IP:         body.IP,
+		Port:       body.Port,
+		User:       body.User,
+		Path:       body.Path,
+		Volumes:    volumes,
+		Mounted:    mountPoint != "",
+		MountPoint: mountPoint,
 	}
 	if includePassword {
 		info.Password = body.Password
-	}
-	for i, mp := range body.MultiPaths {
-		name := mp
-		if i < len(body.PathNames) {
-			name = body.PathNames[i]
-		}
-		info.Volumes = append(info.Volumes, StorageVolume{Name: name, Path: mp})
 	}
 	return info
 }
@@ -214,10 +212,30 @@ func (p *SftpPlugin) Volumes(deviceID string) []StorageVolume {
 }
 
 // MountedPath returns the local mount point for a device, or "" if not mounted.
+//
+// Reconciles against the kernel mount table on a cache miss, so a mount made
+// before a daemon restart is still reported as mounted.
 func (p *SftpPlugin) MountedPath(deviceID string) string {
 	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.mountPoints[deviceID]
+	mountPoint, cached := p.mountPoints[deviceID]
+	p.mu.RUnlock()
+	if cached {
+		return mountPoint
+	}
+
+	mountPoint, live := liveMountPoint(deviceID)
+	if !live {
+		return ""
+	}
+	// Adopt it, so later calls hit the cache and Unmount knows the path.
+	p.mu.Lock()
+	p.mountPoints[deviceID] = mountPoint
+	p.mu.Unlock()
+	p.logger.Info("adopted SFTP mount left by a previous daemon session",
+		log.String("device_id", deviceID),
+		log.String("mount_point", mountPoint),
+	)
+	return mountPoint
 }
 
 // IsMounted reports whether a device's filesystem is currently mounted.

@@ -780,6 +780,11 @@ to each:
 | `stale SFTP mount at <path> could not be released` | The mount exists but `fusermount` failed; retry, or unmount by path |
 | _(none)_ | Unmounted cleanly |
 
+Mounts survive a daemon restart. The daemon treats the kernel's mount table
+as the source of truth and its own record as a cache, so a mount made before a
+restart is still reported as mounted, is adopted for cleanup, and can be
+unmounted by device id as usual.
+
 ### sftp browse
 
 Request fresh SFTP credentials and list available storage volumes or mount

@@ -236,12 +236,10 @@ func (p *SftpPlugin) autoOpen(browsePath string) {
 func (p *SftpPlugin) OnConnect(_ device.Sender) {}
 
 func (p *SftpPlugin) OnDisconnect(dev device.Sender) {
-	p.mu.Lock()
 	deviceID := dev.ID()
-	_, mounted := p.mountPoints[deviceID]
-	p.mu.Unlock()
-
-	if mounted {
+	// Via MountedPath, so a mount adopted from the kernel is cleaned up too
+	// rather than surviving every disconnect untouched.
+	if p.MountedPath(deviceID) != "" {
 		p.logger.Info("device disconnected, cleaning up SFTP mount",
 			log.String("device_id", deviceID),
 		)
@@ -269,18 +267,30 @@ func (p *SftpPlugin) OnDisconnect(dev device.Sender) {
 // released, so a failed unmount can be retried instead of leaving the daemon
 // believing the device is unmounted while the FUSE mount is still live.
 func (p *SftpPlugin) Unmount(deviceID string) error {
-	p.mu.RLock()
-	mountPoint, ok := p.mountPoints[deviceID]
-	pid, hasPID := p.mountPIDs[deviceID]
-	p.mu.RUnlock()
-
-	if !ok {
+	// Resolved rather than read from the map directly: a mount made before a
+	// daemon restart is absent from the cache but still live, and reporting
+	// "not mounted" there would leave it holding an sshfs process with no way
+	// to clear it.
+	mountPoint := p.MountedPath(deviceID)
+	if mountPoint == "" {
 		return fmt.Errorf("not mounted: no SFTP mount for device %s", deviceID)
 	}
 
+	p.mu.RLock()
+	pid := p.mountPIDs[deviceID]
+	p.mu.RUnlock()
+
 	p.logger.Info("unmounting SFTP share", log.String("mount_point", mountPoint))
 
-	// Graceful shutdown: SIGTERM → wait → SIGKILL.
+	// Graceful shutdown: SIGTERM → wait → SIGKILL. A mount adopted from the
+	// kernel has no tracked PID, so look one up rather than skipping the
+	// graceful step.
+	hasPID := pid != 0
+	if !hasPID {
+		if found, err := findSSHFSPID(mountPoint); err == nil {
+			pid, hasPID = found, true
+		}
+	}
 	if hasPID {
 		p.logger.Debug("sending SIGTERM to sshfs", log.Int("pid", pid))
 		proc, err := os.FindProcess(pid)
