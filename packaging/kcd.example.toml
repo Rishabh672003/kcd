@@ -270,7 +270,16 @@ suspend = "systemctl suspend"
 # ─── SFTP: remote filesystem mounting ────────────────────────────────────────
 
 [sftp]
-# mount_dir = ""                # parent directory for mounts, defaults to temp
+# Parent directory for mounts. Default: $XDG_RUNTIME_DIR/kcd/mnt
+#   (/run/user/1000/kcd/mnt), or $XDG_STATE_HOME/kcd/mnt with no user session.
+#   A mount exposes the phone's storage through the filesystem, so keep it out
+#   of folders you wipe in bulk -- `rm -rf` descends into a mount unless given
+#   -x/--one-file-system. kcd warns if this lands under Downloads, Documents,
+#   Desktop, Music, Pictures or Videos.
+# mount_dir = ""
+# read_only = false             # mount read-only, so deletions cannot reach
+                                # the phone; `kcd sftp mount --ro` / --no-ro
+                                # override this per request
 # credentials_timeout_secs = 20 # how long to wait for phone credentials
 # keepalive_interval_secs = 15  # sshfs ServerAliveInterval
 # keepalive_count = 3           # sshfs ServerAliveCountMax

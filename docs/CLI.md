@@ -727,7 +727,7 @@ Port:     8022
 User:     sftp-user
 Password: ********
 Path:     /storage/emulated/0
-Mounted:  yes (/home/user/Downloads/kcd/mnt/kcd-sftp-a1b2c3d4)
+Mounted:  yes (/run/user/1000/kcd/mnt/kcd-sftp-a1b2c3d4)
 
 Storage volumes:
   Internal shared storage  /storage/emulated/0
@@ -772,6 +772,15 @@ kcd sftp mount <device-id>
 The mount point is printed to stdout. Mounting is idempotent: if the device
 is already mounted, the existing mount point is returned and `sshfs` is not run
 again, so repeating the command is a cheap way to re-open the file manager.
+
+```
+kcd sftp mount <device-id> [--ro] [--no-ro]
+```
+
+`--ro` mounts read-only, so writes and deletions fail locally instead of
+reaching the phone. `--no-ro` forces writable when `[sftp] read_only = true`.
+Neither means the configured default applies. A mode cannot be changed on an
+existing mount, so unmount first to switch.
 
 ### sftp unmount
 
@@ -829,7 +838,7 @@ specified volume via sshfs, opening it in the default file manager:
 ```
 $ kcd sftp browse a1b2c3d4 "SD card"
 Requesting SFTP credentials from phone (waiting up to 20s)…
-Mounted at: /home/user/Downloads/kcd/mnt/kcd-sftp-a1b2c3d4
+Mounted at: /run/user/1000/kcd/mnt/kcd-sftp-a1b2c3d4
 ```
 
 The volume argument is resolved in this order:

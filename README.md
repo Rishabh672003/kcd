@@ -233,7 +233,8 @@ download_dir = "~/Downloads/kcd"
 
 [sftp]
 # auto_open    = true
-# mount_dir    = "/home/user/mnt"
+# read_only    = false          # mount read-only, so deletions cannot reach the phone
+# mount_dir    = "/run/user/1000/kcd/mnt"   # keep mounts out of folders you wipe in bulk
 
 [commands]
 uptime   = "uptime"

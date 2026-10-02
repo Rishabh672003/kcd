@@ -591,10 +591,15 @@ Mount a device's storage at a local temporary path.
 **Request payload:**
 
 ```json
-{"deviceId": "a1b2c3d4e5f6_..."}
+{"deviceId": "a1b2c3d4e5f6_...", "readOnly": true}
 ```
 
-**Response data:** `{"path": "/tmp/kcd-sftp-abcdef123456"}`
+`readOnly` is optional on every command that mounts. It is a **pointer** on the
+wire: omitting it means "use the daemon's `[sftp] read_only` default", which is
+distinct from an explicit `false`. A client that always sent `false` would
+quietly turn a read-only default back into a writable mount.
+
+**Response data:** `{"path": "/run/user/1000/kcd/mnt/kcd-sftp-a1b2c3d4"}`
 
 #### `sftp_unmount`
 
@@ -613,6 +618,8 @@ Unmount a previously mounted SFTP filesystem.
 Request fresh SFTP credentials and either list available storage volumes or
 mount a specific one.
 
+`readOnly` behaves as on `sftp_mount_local`.
+
 **Request payload:**
 
 - Without volume (list mode): `{"deviceId": "a1b2c3d4e5f6_..."}`
@@ -628,7 +635,7 @@ fresh credentials.
 {
   "ok": true,
   "data": {
-    "path": "/home/user/Downloads/kcd/mnt/kcd-sftp-a1b2c3d4",
+    "path": "/run/user/1000/kcd/mnt/kcd-sftp-a1b2c3d4",
     "volumes": [
       {"name": "Internal shared storage", "path": "/storage/emulated/0"},
       {"name": "SD card", "path": "/storage/ABCD-1234"}
@@ -1192,7 +1199,7 @@ state.
 **Payload:**
 
 ```json
-{"mountPoint": "/home/user/Downloads/kcd/mnt/kcd-sftp-a1b2c3d4", "volume": "/storage/ABCD-1234"}
+{"mountPoint": "/run/user/1000/kcd/mnt/kcd-sftp-a1b2c3d4", "volume": "/storage/ABCD-1234"}
 ```
 
 `volume` is present only when a specific storage volume was mounted; when the
@@ -1205,7 +1212,7 @@ The device's filesystem was released.
 **Payload:**
 
 ```json
-{"mountPoint": "/home/user/Downloads/kcd/mnt/kcd-sftp-a1b2c3d4"}
+{"mountPoint": "/run/user/1000/kcd/mnt/kcd-sftp-a1b2c3d4"}
 ```
 
 Mount state is also available without waiting for an event: `state.snapshot`
