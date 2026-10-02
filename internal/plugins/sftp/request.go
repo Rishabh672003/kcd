@@ -41,10 +41,7 @@ func (p *SftpPlugin) RequestAndMount(ctx context.Context, dev device.Sender, rea
 
 	p.logger.Info("SFTP request sent, waiting for phone response", log.String("device", dev.ID()))
 
-	timeout := time.Duration(p.cfg.CredentialsTimeoutSecs) * time.Second
-	if timeout == 0 {
-		timeout = 20 * time.Second
-	}
+	timeout := p.credentialsTimeout()
 	deadline, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -66,7 +63,7 @@ func (p *SftpPlugin) RequestAndMount(ctx context.Context, dev device.Sender, rea
 			return p.mountWithBody(ctx, dev.ID(), body, "", readOnly)
 
 		case <-deadline.Done():
-			return "", fmt.Errorf("timed out after %s waiting for SFTP response — is the KDE Connect app open on the phone?", timeout)
+			return "", fmt.Errorf("timed out after %s waiting for SFTP response — the phone did not start its SFTP server. Either the KDE Connect app is not open, or it has not granted kcd file access (on Android, enable file access for KDE Connect)", timeout)
 		}
 	}
 }
@@ -89,10 +86,7 @@ func (p *SftpPlugin) RequestAndMountVolume(ctx context.Context, dev device.Sende
 
 	p.logger.Info("SFTP request sent, waiting for phone response", log.String("device", dev.ID()))
 
-	timeout := time.Duration(p.cfg.CredentialsTimeoutSecs) * time.Second
-	if timeout == 0 {
-		timeout = 20 * time.Second
-	}
+	timeout := p.credentialsTimeout()
 	deadline, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -125,7 +119,7 @@ func (p *SftpPlugin) RequestAndMountVolume(ctx context.Context, dev device.Sende
 			return path, vols, nil
 
 		case <-deadline.Done():
-			return "", nil, fmt.Errorf("timed out after %s waiting for SFTP response — is the KDE Connect app open on the phone?", timeout)
+			return "", nil, fmt.Errorf("timed out after %s waiting for SFTP response — the phone did not start its SFTP server. Either the KDE Connect app is not open, or it has not granted kcd file access (on Android, enable file access for KDE Connect)", timeout)
 		}
 	}
 }
@@ -260,6 +254,16 @@ func (p *SftpPlugin) adoptIfMounted(deviceID, mountPoint string) string {
 // IsMounted reports whether a device's filesystem is currently mounted.
 func (p *SftpPlugin) IsMounted(deviceID string) bool {
 	return p.MountedPath(deviceID) != ""
+}
+
+// credentialsTimeout is how long to wait for the phone's SFTP response. The
+// CLI derives its own socket deadline from the same configured value, so the
+// daemon reports the timeout rather than the client reporting a dead socket.
+func (p *SftpPlugin) credentialsTimeout() time.Duration {
+	if p.cfg.CredentialsTimeoutSecs <= 0 {
+		return 20 * time.Second
+	}
+	return time.Duration(p.cfg.CredentialsTimeoutSecs) * time.Second
 }
 
 // ReadOnlyByDefault reports the configured read-only default, used when a

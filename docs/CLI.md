@@ -769,6 +769,12 @@ Request credentials and immediately mount the phone's filesystem using `sshfs`.
 kcd sftp mount <device-id>
 ```
 
+Waits up to `[sftp] credentials_timeout_secs` for the phone to start its SFTP
+server. If it does not answer, the phone is either not running KDE Connect or
+has not granted kcd file access (on Android, enable file access for KDE
+Connect) — the CLI's own deadline is derived from that same setting, so you get
+that message rather than a socket timeout.
+
 The mount point is printed to stdout. Mounting is idempotent: if the device
 is already mounted, the existing mount point is returned and `sshfs` is not run
 again, so repeating the command is a cheap way to re-open the file manager.

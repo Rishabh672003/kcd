@@ -280,7 +280,11 @@ suspend = "systemctl suspend"
 # read_only = false             # mount read-only, so deletions cannot reach
                                 # the phone; `kcd sftp mount --ro` / --no-ro
                                 # override this per request
-# credentials_timeout_secs = 20 # how long to wait for phone credentials
+# credentials_timeout_secs = 20 # how long to wait for the phone's SFTP
+                                # response. Also sets the kcd CLI's deadline for
+                                # the commands that wait on it, so a phone that
+                                # never answers is reported as such rather than
+                                # as a socket timeout.
 # keepalive_interval_secs = 15  # sshfs ServerAliveInterval
 # keepalive_count = 3           # sshfs ServerAliveCountMax
 # auto_open = true              # automatically open mount in file manager

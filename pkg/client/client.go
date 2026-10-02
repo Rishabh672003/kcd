@@ -19,6 +19,12 @@ type Client struct {
 	// PairListenTimeout is the client's deadline for a pair_listen call.
 	// Set it above the daemon's pairing.listen_timeout; zero defaults to 70s.
 	PairListenTimeout time.Duration
+	// SftpTimeout is the client's deadline for the calls that block waiting for
+	// the phone's SFTP response (mount_local, browse). Must exceed the daemon's
+	// sftp.credentials_timeout_secs, or the socket deadline fires first and the
+	// user is told the connection timed out instead of being told the phone did
+	// not answer. Zero defaults to 60s.
+	SftpTimeout time.Duration
 }
 
 // Call dialed the daemon, sends a request, and returns the response.
@@ -27,6 +33,12 @@ func (c *Client) Call(cmd string, payload interface{}) (*ipc.Response, error) {
 	if timeout <= 0 {
 		timeout = 5 * time.Second
 	}
+	return c.callWithTimeout(cmd, payload, timeout)
+}
+
+// callWithTimeout is Call with an explicit deadline, for the few commands whose
+// daemon-side wait is longer than the default client deadline.
+func (c *Client) callWithTimeout(cmd string, payload interface{}, timeout time.Duration) (*ipc.Response, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 

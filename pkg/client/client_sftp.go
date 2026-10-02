@@ -1,6 +1,8 @@
 package client
 
 import (
+	"time"
+
 	"encoding/json"
 
 	"github.com/bethropolis/kcd/internal/ipc"
@@ -49,7 +51,7 @@ func (c *Client) SftpVolumes(deviceID string) ([]ipc.StorageVolumeResponse, erro
 // phone, wait for the response, mount via sshfs, and open the result in
 // the default file manager. Returns the local browse path on success.
 func (c *Client) SftpMountLocal(deviceID string, readOnly *bool) (string, error) {
-	resp, err := c.Call(ipc.CmdSftpMountLocal, ipc.SftpMountPayload{DeviceID: deviceID, ReadOnly: readOnly})
+	resp, err := c.callWithTimeout(ipc.CmdSftpMountLocal, ipc.SftpMountPayload{DeviceID: deviceID, ReadOnly: readOnly}, c.sftpTimeout())
 	if err != nil {
 		return "", err
 	}
@@ -73,11 +75,11 @@ func (c *Client) SftpUnmount(deviceID string) error {
 // volume can be an index (0-based), volume name, or path.
 // Returns the mount path (empty if listing) and available volumes.
 func (c *Client) SftpBrowse(deviceID string, volume string, readOnly *bool) (string, []ipc.StorageVolumeResponse, error) {
-	resp, err := c.Call(ipc.CmdSftpBrowse, ipc.SftpBrowsePayload{
+	resp, err := c.callWithTimeout(ipc.CmdSftpBrowse, ipc.SftpBrowsePayload{
 		DeviceID: deviceID,
 		Volume:   volume,
 		ReadOnly: readOnly,
-	})
+	}, c.sftpTimeout())
 	if err != nil {
 		return "", nil, err
 	}
@@ -86,4 +88,12 @@ func (c *Client) SftpBrowse(deviceID string, volume string, readOnly *bool) (str
 		_ = json.Unmarshal(resp.Data, &result)
 	}
 	return result.Path, result.Volumes, nil
+}
+
+// sftpTimeout is the deadline for calls that wait on the phone.
+func (c *Client) sftpTimeout() time.Duration {
+	if c.SftpTimeout > 0 {
+		return c.SftpTimeout
+	}
+	return 60 * time.Second
 }
