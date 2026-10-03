@@ -384,7 +384,7 @@ The phone should vibrate/show a notification.
 ### 5.3 Share a File
 
 ```python
-ipc_request(sock, "share", {"deviceId": dev_id, "file": "/path/to/file.pdf"})
+ipc_request(sock, "share", {"deviceId": dev_id, "filePath": "/path/to/file.pdf"})
 ```
 
 ### 5.4 MPRIS Control
