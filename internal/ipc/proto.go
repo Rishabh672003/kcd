@@ -96,6 +96,13 @@ type DevicePayload struct {
 	Key      string `json:"key,omitempty"`
 }
 
+// PairPayload is used for CmdPair.
+type PairPayload struct {
+	DeviceID string `json:"deviceId"`
+	// Reject declines a pending request or unpairs. Without it, pair accepts.
+	Reject bool `json:"reject,omitempty"`
+}
+
 // SharePayload is used for CmdShare.
 type SharePayload struct {
 	DeviceID string `json:"deviceId"`
