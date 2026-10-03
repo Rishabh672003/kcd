@@ -73,6 +73,7 @@ func (p *NotificationPlugin) Handle(ctx context.Context, dev device.Sender, pkt 
 		// Still publish the event for scripts/watch, but skip the desktop popup.
 		if p.bus != nil {
 			payload := map[string]any{
+				"id":      body.ID,
 				"appName": body.AppName,
 				"title":   body.Title,
 				"text":    body.Text,
@@ -98,6 +99,7 @@ func (p *NotificationPlugin) Handle(ctx context.Context, dev device.Sender, pkt 
 
 	if p.bus != nil {
 		payload := map[string]any{
+			"id":      body.ID,
 			"appName": body.AppName,
 			"title":   body.Title,
 			"text":    body.Text,
