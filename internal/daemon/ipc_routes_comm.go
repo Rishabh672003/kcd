@@ -35,7 +35,14 @@ func registerCommRoutes(handler *ipc.Handler, cfg *config.Config, devices *devic
 		handler.Register(ipc.CmdSmsRequestConv, func(req ipc.Request) ipc.Response {
 			var p ipc.SMSConvPayload
 			return deviceRoute(req, &p, devices, plugins, "SMS", func(dev *device.Device, pl plugin.Plugin) ipc.Response {
-				if err := pl.(*sms.SMSPlugin).RequestConversation(dev, p.ThreadID, p.RangeStartTimestamp, p.NumberToRequest); err != nil {
+				rangeStart, count := int64(-1), int64(-1)
+				if p.RangeStartTimestamp != nil {
+					rangeStart = *p.RangeStartTimestamp
+				}
+				if p.NumberToRequest != nil {
+					count = *p.NumberToRequest
+				}
+				if err := pl.(*sms.SMSPlugin).RequestConversation(dev, p.ThreadID, rangeStart, count); err != nil {
 					return ipc.Response{OK: false, Error: err.Error()}
 				}
 				return ipc.Response{OK: true}

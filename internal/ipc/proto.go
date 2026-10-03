@@ -124,10 +124,12 @@ type SMSPayload struct {
 
 // SMSConvPayload is used for CmdSmsRequestConv.
 type SMSConvPayload struct {
-	DeviceID            string `json:"deviceId"`
-	ThreadID            int64  `json:"threadID"`
-	RangeStartTimestamp int64  `json:"rangeStartTimestamp,omitempty"`
-	NumberToRequest     int64  `json:"numberToRequest,omitempty"`
+	DeviceID string `json:"deviceId"`
+	ThreadID int64  `json:"threadID"`
+	// Pointers keep an omitted field out of the packet: the phone reads an
+	// explicit 0 as "older than the epoch" or "zero messages" and returns nothing.
+	RangeStartTimestamp *int64 `json:"rangeStartTimestamp,omitempty"`
+	NumberToRequest     *int64 `json:"numberToRequest,omitempty"`
 }
 
 // SMSAttachmentPayload is used for CmdSmsRequestAttachment.
