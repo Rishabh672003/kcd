@@ -685,10 +685,13 @@ Send an MPRIS control action to a device.
 {"deviceId": "a1b2c3d4e5f6_...", "action": "play"}
 ```
 
-Supported actions: `"play"`, `"pause"`, `"playpause"`, `"next"`, `"previous"`,
-`"stop"`, `"raise"`, `"quit"`. Volume can be set with `"setVolume"` (requires
-an integer value field). Seek with `"seek"` (int64, offset in ms) or
-`"setPosition"` (int64, absolute position in ms).
+Supported actions: `"Play"`, `"Pause"`, `"PlayPause"`, `"Next"`, `"Previous"`,
+`"Stop"`, `"raise"`, `"quit"`. The first six are matched case-insensitively and
+sent in the spelling the phone expects, so `"playpause"` works too. Set the
+volume with a `"volume"` field (int, 0–100). Seek with `"setPosition"` (int64,
+absolute position in ms) or `"seek"` (int64, relative offset in ms, converted
+to an absolute position from the tracked playback state, since phones only
+implement absolute positioning). `action` may be omitted for any of these.
 
 **Response data:** none
 
