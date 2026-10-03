@@ -14,10 +14,28 @@ import (
 // SendAction sends a media control action to a remote device.
 // Sends on both kdeconnect.mpris (for Android's old MprisPlugin) and
 // kdeconnect.mpris.request (for MprisReceiverPlugin) to maximise compatibility.
+// canonicalActions maps lowercase action names to the phone's spelling.
+var canonicalActions = map[string]string{
+	"play":      "Play",
+	"pause":     "Pause",
+	"playpause": "PlayPause",
+	"next":      "Next",
+	"previous":  "Previous",
+	"stop":      "Stop",
+}
+
+// CanonicalAction returns the phone's spelling of action, or action if unknown.
+func CanonicalAction(action string) string {
+	if c, ok := canonicalActions[strings.ToLower(action)]; ok {
+		return c
+	}
+	return action
+}
+
 func (p *MPRISPlugin) SendAction(dev device.Sender, player, action string, seek *int64, volume *int) error {
 	body := MPRISRequest{
 		Player:    player,
-		Action:    action,
+		Action:    CanonicalAction(action),
 		SetVolume: volume,
 		Seek:      seek,
 	}
