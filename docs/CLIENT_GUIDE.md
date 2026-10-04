@@ -378,8 +378,9 @@ ipc_request(sock, "mpris_action", {"deviceId": dev_id, "action": "playpause"})
 # Next track
 ipc_request(sock, "mpris_action", {"deviceId": dev_id, "action": "next"})
 
-# Set volume
-ipc_request(sock, "mpris_action", {"deviceId": dev_id, "action": "setVolume", "value": 50})
+# Set volume. Volume is its own field, not an action — the payload has no
+# "value" key, so {"action": "setVolume"} sends nothing and still returns ok.
+ipc_request(sock, "mpris_action", {"deviceId": dev_id, "volume": 50})
 ```
 
 ### 5.5 Send SMS
@@ -672,8 +673,21 @@ class MediaController:
         })
 
     def set_volume(self, vol):
+        # Volume is a separate payload field. "setVolume" is not an action.
         ipc_request(self.sock, "mpris_action", {
-            "deviceId": self.dev_id, "action": "setVolume", "value": vol
+            "deviceId": self.dev_id, "volume": vol
+        })
+
+    def seek_relative(self, delta_ms):
+        # Needs a tracked position; errors otherwise. Phones ignore "seek".
+        return ipc_request(self.sock, "mpris_action", {
+            "deviceId": self.dev_id, "seek": delta_ms
+        })
+
+    def seek_absolute(self, pos_ms):
+        # Always works: the phone already knows where it is.
+        return ipc_request(self.sock, "mpris_action", {
+            "deviceId": self.dev_id, "setPosition": pos_ms
         })
 ```
 

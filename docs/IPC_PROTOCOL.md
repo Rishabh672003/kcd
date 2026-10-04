@@ -691,7 +691,9 @@ sent in the spelling the phone expects, so `"playpause"` works too. Set the
 volume with a `"volume"` field (int, 0–100). Seek with `"setPosition"` (int64,
 absolute position in ms) or `"seek"` (int64, relative offset in ms, converted
 to an absolute position from the tracked playback state, since phones only
-implement absolute positioning). `action` may be omitted for any of these.
+implement absolute positioning). A `"seek"` with no tracked position is
+rejected with an error rather than sent as a no-op — use `"setPosition"` if you
+already know the target. `action` may be omitted for any of these.
 
 **Response data:** none
 

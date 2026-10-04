@@ -773,8 +773,11 @@ SD card                  →  /storage/ABCD-1234
 Request credentials and immediately mount the phone's filesystem using `sshfs`.
 
 ```
-kcd sftp mount <device-id>
+kcd sftp mount <device-id> [--ro] [--no-ro]
 ```
+
+Mounts under `$XDG_RUNTIME_DIR/kcd/mnt` (`/run/user/1000/kcd/mnt`) unless
+`[sftp] mount_dir` is set.
 
 Waits up to `[sftp] credentials_timeout_secs` for the phone to start its SFTP
 server. If it does not answer, the phone is either not running KDE Connect or
@@ -785,10 +788,6 @@ that message rather than a socket timeout.
 The mount point is printed to stdout. Mounting is idempotent: if the device
 is already mounted, the existing mount point is returned and `sshfs` is not run
 again, so repeating the command is a cheap way to re-open the file manager.
-
-```
-kcd sftp mount <device-id> [--ro] [--no-ro]
-```
 
 `--ro` mounts read-only, so writes and deletions fail locally instead of
 reaching the phone. `--no-ro` forces writable when `[sftp] read_only = true`.

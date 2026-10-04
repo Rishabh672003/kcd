@@ -286,7 +286,7 @@ goroutine leak when the child wedges.
 | `findmyphone` | `kdeconnect.findmyphone.request` | Runs `paplay` or `aplay` |
 | `lockdevice` | `kdeconnect.lock.request` | Calls `loginctl lock/unlock-session` |
 | `mousepad` | `kdeconnect.mousepad.request` | `ydotool` (Wayland) / `xdotool` (X11) |
-| `mpris` | `kdeconnect.mpris.request`, `kdeconnect.mpris` | Native D-Bus via `godbus`; controls any MPRIS2 player. Discovers players via D-Bus `NameOwnerChanged` signals. Receives phone NowPlaying via `kdeconnect.mpris` (requires Android notification access). Dual-sends `mpris.request` + `mpris` for legacy compatibility. |
+| `mpris` | `kdeconnect.mpris.request`, `kdeconnect.mpris` | Native D-Bus via `godbus`; controls any MPRIS2 player. Discovers players via D-Bus `NameOwnerChanged` signals. Receives phone NowPlaying via `kdeconnect.mpris` (requires Android notification access). Dual-sends `mpris.request` + `mpris` for legacy compatibility. `CanonicalAction` maps the documented lowercase names to the phone's casing. A relative `Seek` is resolved against the tracked position and sent as `SetPosition`, which is what phones implement — and which errors when there is no tracked position, rather than silently seeking by a field the phone ignores. |
 | `notification` | `kdeconnect.notification` | Downloads icon payload over TLS side-channel; per-app filter via `SetFilters()`; `notify-send --help` probe for `--print-id` support; `tlsConfig` + `logger` required in constructor |
 | `pair` | `kdeconnect.pair` | Manages the pairing handshake and certificate fingerprint verification |
 | `ping` | `kdeconnect.ping` | Fires `ping.received`; can be sent outbound |

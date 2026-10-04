@@ -7,6 +7,12 @@
 
 # ─── Identity ─────────────────────────────────────────────────────────────────
 
+# Stable identifier used for pairing and certificate fingerprint checks.
+# Generated once on first run and written back here. Never edit it: changing it
+# makes every paired device fail to authenticate, and you would have to
+# re-pair each one.
+# device_id = ""
+
 # The name other devices see when discovering this machine.
 # Default: system hostname.
 # device_name = "my-desktop"
