@@ -258,7 +258,9 @@ type MprisActionPayload struct {
 	Player   string `json:"player,omitempty"`
 	Action   string `json:"action,omitempty"`
 	Volume   *int   `json:"volume,omitempty"`
-	Seek     *int64 `json:"seek,omitempty"`
+	// Seek: relative ms. SetPosition: absolute ms; wins over Seek.
+	Seek        *int64 `json:"seek,omitempty"`
+	SetPosition *int64 `json:"setPosition,omitempty"`
 }
 
 type MprisRemotePlayer struct {

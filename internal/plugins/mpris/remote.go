@@ -14,12 +14,45 @@ import (
 // SendAction sends a media control action to a remote device.
 // Sends on both kdeconnect.mpris (for Android's old MprisPlugin) and
 // kdeconnect.mpris.request (for MprisReceiverPlugin) to maximise compatibility.
-func (p *MPRISPlugin) SendAction(dev device.Sender, player, action string, seek *int64, volume *int) error {
+// canonicalActions maps lowercase action names to the phone's spelling.
+var canonicalActions = map[string]string{
+	"play":      "Play",
+	"pause":     "Pause",
+	"playpause": "PlayPause",
+	"next":      "Next",
+	"previous":  "Previous",
+	"stop":      "Stop",
+}
+
+// CanonicalAction returns the phone's spelling of action, or action if unknown.
+func CanonicalAction(action string) string {
+	if c, ok := canonicalActions[strings.ToLower(action)]; ok {
+		return c
+	}
+	return action
+}
+
+// SendAction sends a control request to a remote player. A relative seek is
+// sent as SetPosition computed from the tracked position.
+func (p *MPRISPlugin) SendAction(dev device.Sender, player, action string, seek, setPosition *int64, volume *int) error {
+	if setPosition == nil && seek != nil {
+		if state := p.RemoteState(dev.ID()); state != nil {
+			pos := max(state.Pos+*seek, 0)
+			if state.Length > 0 {
+				pos = min(pos, state.Length)
+			}
+			setPosition, seek = &pos, nil
+		}
+	}
+	if setPosition != nil {
+		seek = nil // send only one
+	}
 	body := MPRISRequest{
-		Player:    player,
-		Action:    action,
-		SetVolume: volume,
-		Seek:      seek,
+		Player:      player,
+		Action:      CanonicalAction(action),
+		SetVolume:   volume,
+		Seek:        seek,
+		SetPosition: setPosition,
 	}
 	pkt, err := protocol.NewPacket("kdeconnect.mpris.request", body)
 	if err != nil {

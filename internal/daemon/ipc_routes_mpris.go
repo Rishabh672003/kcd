@@ -55,7 +55,7 @@ func registerMprisRoutes(handler *ipc.Handler, devices *device.Registry, plugins
 				return ipc.Response{OK: false, Error: "no player known for this device; specify --player"}
 			}
 
-			if err := mprisPl.SendAction(dev, player, p.Action, p.Seek, p.Volume); err != nil {
+			if err := mprisPl.SendAction(dev, player, p.Action, p.Seek, p.SetPosition, p.Volume); err != nil {
 				return ipc.Response{OK: false, Error: err.Error()}
 			}
 			return ipc.Response{OK: true}
