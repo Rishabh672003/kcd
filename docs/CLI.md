@@ -532,6 +532,13 @@ kcd mpris seek -10s
 kcd mpris seek 1m30s
 ```
 
+A signed offset is sent to the phone as an absolute position computed from the
+last reported one, because KDE Connect Android implements `SetPosition` but
+ignores `Seek`. That needs a known position: if the phone has never reported
+one (or it was cleared by a disconnect), the command fails with an error rather
+than silently doing nothing. An absolute offset or a bare number goes straight
+through and needs no cached state.
+
 ### mpris raw
 
 Dump raw MPRIS debug state for all local media players as JSON. Shows player
