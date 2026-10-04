@@ -49,6 +49,26 @@ const (
 	TypeStateSnapshot        EventType = "state.snapshot"
 )
 
+// All returns every known event type. TestAllMatchesConstants keeps it in step
+// with the constants above.
+func All() []EventType {
+	return []EventType{
+		TypeDeviceAdded, TypeDeviceRemoved, TypeDeviceConnected, TypeDeviceDisconnected,
+		TypePairRequested, TypePairAccepted, TypePairRejected,
+		TypeBatteryUpdate, TypeBatteryThreshold,
+		TypeNotification, TypeNotificationCanceled,
+		TypeShareProgress, TypeShareComplete, TypeShareText, TypeShareURL,
+		TypePingReceived, TypeConnectivityUpdate,
+		TypeTelephonyRinging, TypeTelephonyMissed, TypeTelephonyTalking, TypeTelephonyCanceled,
+		TypeSftpMount, TypeSftpMounted, TypeSftpUnmounted,
+		TypeRunCommandOutput,
+		TypeVolumeUpdate,
+		TypeSMSIncoming, TypeSMSAttachment,
+		TypeRingReceived, TypeContactsUpdated,
+		TypeMprisUpdate, TypeStateSnapshot,
+	}
+}
+
 const (
 	// DefaultSubscriberCap is the channel buffer size for plugin-internal
 	// subscribers (battery test waits, sftp credential waits, etc.).
@@ -58,6 +78,29 @@ const (
 	// Larger to tolerate slow CLI consumers (jq, SSH, slow terminals).
 	WatchSubscriberCap = 256
 )
+
+// OptInOnly lists event types a subscriber must name explicitly. An unfiltered
+// Subscribe matches them, which would let a bare `kcd watch` arm the phone and
+// print message bodies.
+func OptInOnly() []EventType {
+	return []EventType{TypeSMSIncoming, TypeSMSAttachment}
+}
+
+// AllExceptOptIn is every event type except the opt-in-only ones.
+func AllExceptOptIn() []EventType {
+	excluded := make(map[EventType]bool)
+	for _, t := range OptInOnly() {
+		excluded[t] = true
+	}
+	all := All()
+	out := make([]EventType, 0, len(all))
+	for _, t := range all {
+		if !excluded[t] {
+			out = append(out, t)
+		}
+	}
+	return out
+}
 
 // Event represents a single occurrence of something interesting in the daemon.
 type Event struct {

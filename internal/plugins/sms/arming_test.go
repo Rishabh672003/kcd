@@ -248,7 +248,10 @@ func TestMessageBodyNeverLogged(t *testing.T) {
 	const secret = "my bank code is 1234"
 	logger, snapshot := log.Observe()
 	bus := events.NewBus(log.Nop())
-	p := NewSMSPlugin(config.SMSConfig{AlwaysArm: true, NotifyIncoming: false}, bus, nil, logger)
+	// PublishIncoming so the event assertion below has something to read; the
+	// point of this test is that the body reaches neither the log nor, by
+	// default, the bus.
+	p := NewSMSPlugin(config.SMSConfig{AlwaysArm: true, NotifyIncoming: false, PublishIncoming: true}, bus, nil, logger)
 	sub := bus.Subscribe(4, events.TypeSMSIncoming)
 	defer sub.Close()
 

@@ -129,10 +129,14 @@ func (s *Server) handleWatch(conn net.Conn, payload []byte) {
 		}
 	}
 
-	// Subscribe
+	// An empty filter means "everything", SMS included, so substitute the
+	// explicit default that leaves the opt-in types out.
 	var filters []events.EventType
 	for _, e := range p.Events {
 		filters = append(filters, events.EventType(e))
+	}
+	if len(filters) == 0 {
+		filters = events.AllExceptOptIn()
 	}
 
 	sub := bus.Subscribe(events.WatchSubscriberCap, filters...)

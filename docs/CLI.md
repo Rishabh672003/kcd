@@ -947,6 +947,15 @@ Request messages from a specific conversation thread.
 kcd sms conversation <device-id> <thread-id>
 ```
 
+> **Both commands arm the phone, permanently.** The phone latches on its first
+> request and cannot be un-armed — after either of these it pushes *every* new
+> message, and kcd cannot stop it. The only way to end that is to stop the SMS
+> plugin on the device.
+>
+> Message bodies do not reach the event bus unless `[sms] publish_incoming` is
+> set, so this does not expose content by itself, but the packets still cross
+> the wire.
+
 ### sms attachment
 
 Request an MMS attachment file from a device. The file is saved locally and an
@@ -1171,9 +1180,15 @@ kcd watch --events=sms.incoming
 ```
 
 The phone pushes messages as they arrive, so this needs no polling and no
-request command. Since `[sms] always_arm` is off by default, this
-subscription is also what arms the push — nothing is asked of the phone
-until it is running.
+request command. Two things must be true:
+
+- `[sms] publish_incoming = true` — otherwise the body never reaches the event
+  bus, because the phone may already be armed and pushing.
+- `[sms] always_arm = true`, or this subscription itself, which is what arms the
+  phone.
+
+SMS is never delivered to an unfiltered `kcd watch`: it must be named with
+`-e`. That is what stops an incidental `kcd watch` from arming the phone.
 
 **Raw NDJSON for scripting**
 

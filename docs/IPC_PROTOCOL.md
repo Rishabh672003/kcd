@@ -855,6 +855,12 @@ The `events` filter is applied on the server side. Only events whose type
 string exactly matches one of the filters are delivered. Invalid/unknown
 filter strings are silently ignored — they simply match nothing.
 
+Omitting `events` does **not** mean everything. The SMS types are opt-in and
+are excluded from an unfiltered stream, because a subscriber that matches them
+also arms the phone and receives message bodies. A client wanting SMS must name
+`sms.incoming` explicitly, and the daemon must additionally have
+`[sms] publish_incoming = true`.
+
 ### Reconnection
 
 The official `kcd watch` CLI client implements automatic reconnection with
@@ -1253,6 +1259,9 @@ Device volume level changed (sent in two shapes).
 ```
 
 ### 5.11 SMS Events
+
+Opt-in. These are not delivered to an unfiltered watch stream, and
+`sms.incoming` additionally requires `[sms] publish_incoming = true`.
 
 #### `sms.incoming`
 

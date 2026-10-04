@@ -344,6 +344,7 @@ Device state is persisted to `devices.json` on every change. `DeviceInfo` fields
 | Area | Status |
 |---|---|
 | **Mousepad keyboard** special keys | Intentionally unhandled — absent from the KDE Connect spec. |
+| **Un-arming the phone** | Not possible. Android's `haveMessagesBeenRequested` is set by any `sms.request*` packet and nothing clears it, not even plugin teardown, so the phone pushes every new message for the life of the connection. kcd mitigates by gating the bus publish on `[sms] publish_incoming` and excluding SMS from an unfiltered watch stream — that stops bodies leaving the daemon, but the packets still arrive. Ending it needs the plugin disabled on the device, or a protocol change Android does not implement. |
 
 ---
 
