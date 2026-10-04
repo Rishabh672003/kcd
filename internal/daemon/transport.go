@@ -181,8 +181,8 @@ func runTransport(ctx context.Context, cfg *tls.Config, bc *discovery.Broadcaste
 				// loop per device. The sighting is recorded as the freshest
 				// known address (the parked loop reloads it every lap, so a
 				// roam survives a failed one-shot dial), and the attempt
-				// counter restarts — the peer is provably back, so escalated
-				// backoff no longer applies.
+				// counter restarts: the peer is provably back, so the
+				// escalated backoff does not apply.
 				dev.PokeReconnect()
 				if !dev.IsConnected() && dev.TryReconnect() {
 					dev.ResetReconnectAttempt()

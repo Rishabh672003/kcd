@@ -37,8 +37,7 @@ func (d *Device) Connect(ctx context.Context, conn *transport.Conn, dispatch fun
 		oldDone := d.done
 		oldAddr = oldConn.RemoteAddr().String()
 		newAddr = conn.RemoteAddr().String()
-		// Close the old done so its writerLoop exits; the new
-		// writerLoop will own the fresh channel.
+		// The new writerLoop owns the fresh channel.
 		d.closeOnce.Do(func() {
 			if oldDone != nil {
 				close(oldDone)

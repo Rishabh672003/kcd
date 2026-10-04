@@ -89,7 +89,6 @@ func (p *BatteryPlugin) handleThreshold(dev device.Sender, body BatteryBody) {
 		)
 	}
 
-	// Emit event so watch / scripts can react.
 	if p.bus != nil {
 		p.bus.Publish(events.TypeBatteryThreshold, dev.ID(), map[string]any{
 			"charge":   body.CurrentCharge,
@@ -109,7 +108,6 @@ func (p *BatteryPlugin) OnConnect(dev device.Sender) {
 	})
 	dev.Send(pkt)
 
-	// Send our local battery to the phone.
 	charge, charging, err := readLocalBattery()
 	if err != nil {
 		p.logger.Debug("local battery unavailable on connect", log.Error(err))

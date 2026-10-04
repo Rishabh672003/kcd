@@ -47,6 +47,32 @@ These structural constraints must hold at all times:
 
 ---
 
+## Comment Policy
+
+**Explain why, never what.** A comment that survives deletion without the reader losing information should be deleted.
+
+**Required, not optional.** These are not stylistic extras — add them:
+
+- Security rationale: what an attacker gains without a validation, why an input is rejected.
+- Protocol facts that cannot be re-derived from the code: a wire quirk, an Android-only behaviour, a literal error string worth matching on.
+- Invariants a plausible future edit would break.
+- The reason behind every timeout, retry count, or magic number.
+
+**Not wanted:**
+
+- Restating the next line of code.
+- Change narration (`used to`, `is now`, `no longer`) — git history owns that. Keep the conclusion, drop the archaeology.
+- Dev-process references (`Phase 2`, planning-artifact numbering). They mean nothing to a reader of the repo.
+- Prose duplicating this file or `docs/`.
+
+**Godoc stays** on exported identifiers: one line, starting with the identifier, even where thin. That is the API contract, not noise. Use `// Name does X.` even when `X` is obvious.
+
+**A comment block over 8 lines is usually two comments** — a contract and a history. Keep the contract, drop the history, and split the remainder.
+
+When trimming a block, any comment touching validation, TLS, key handling, timeouts, or the KDE Connect wire format must keep its reason somewhere in the block, even if the wording changes.
+
+---
+
 ## Key File Locations
 
 | Purpose | Path |

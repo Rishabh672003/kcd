@@ -23,6 +23,7 @@ var mountTablePath = "/proc/mounts"
 // the kernel as the source of truth and the map as a cache makes that
 // recoverable without persisting anything -- which is what we want, since a
 // persisted entry would go stale after a crash and need reconciling anyway.
+
 // mountExists reports whether the kernel currently has a FUSE mount at this
 // exact path. Unmount uses it to tell "nothing is mounted" apart from "the
 // release failed", which are very different outcomes for a caller.

@@ -129,15 +129,14 @@ func NewDevice(id, name, dtype string, logger log.Logger) *Device {
 		state:    StateUnpaired,
 		sendChan: make(chan *protocol.Packet, 32),
 		done:     make(chan struct{}),
-		// Nil-safe by construction, but PokeReconnect also tolerates a
-		// zero-value Device (tests): a send on a nil channel blocks, so
-		// the select always takes the default branch.
+		// A send on a nil channel blocks forever, so the select always takes
+		// the default branch — which is what makes this nil-safe and what
+		// lets tests use a zero-value Device.
 		reconnectWake: make(chan struct{}, 1),
 		logger:        logger.With(log.String("device_id", id)),
 	}
 }
 
-// SetBus sets the event bus for the device.
 func (d *Device) SetBus(bus *events.Bus) {
 	d.mu.Lock()
 	defer d.mu.Unlock()

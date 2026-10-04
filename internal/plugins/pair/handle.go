@@ -63,12 +63,12 @@ func (p *PairPlugin) handlePairRequest(_ context.Context, dev *device.Device, bo
 					log.String("device_id", dev.ID()),
 					log.Int64("timestamp", body.Timestamp),
 					log.Int64("now", now))
-				// Send rejection
 				pkt, _ := protocol.NewPairPacket(protocol.PairReject, 0)
 				dev.Send(pkt)
 				return nil
 			}
-			// Store timestamp for verification key
+			// Remembered so the verification key can be recomputed for
+			// this request rather than at pairing time.
 			p.mu.Lock()
 			p.pairingTimestamp[dev.ID()] = body.Timestamp
 			p.mu.Unlock()
@@ -85,7 +85,6 @@ func (p *PairPlugin) handlePairRequest(_ context.Context, dev *device.Device, bo
 				log.String("code", vKey))
 		}
 
-		// Set state and wait for user to accept via CLI
 		dev.SetState(device.StatePairRequestedByPeer)
 		if p.onStateChanged != nil {
 			p.onStateChanged()

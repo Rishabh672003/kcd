@@ -16,16 +16,14 @@ type Logger struct {
 	level zap.AtomicLevel
 }
 
-// Debug logs at debug level.
+// Debug, Info, Warn and Error are level-forwards to the zap backend. They
+// exist so callers never depend on zap directly (see the package comment).
 func (l Logger) Debug(msg string, fields ...Field) { l.zap.Debug(msg, fields...) }
 
-// Info logs at info level.
 func (l Logger) Info(msg string, fields ...Field) { l.zap.Info(msg, fields...) }
 
-// Warn logs at warn level.
 func (l Logger) Warn(msg string, fields ...Field) { l.zap.Warn(msg, fields...) }
 
-// Error logs at error level.
 func (l Logger) Error(msg string, fields ...Field) { l.zap.Error(msg, fields...) }
 
 // Fatal logs at fatal level, then exits. Retained for parity with the

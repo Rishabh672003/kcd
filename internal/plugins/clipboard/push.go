@@ -42,8 +42,8 @@ func Push(ctx context.Context, dev device.Sender, p *ClipboardPlugin) error {
 	}
 
 	p.mu.Lock()
-	// Skip if content matches what we last received from the phone (lastContent)
-	// OR what we last pushed outbound (lastPushedContent).
+	// Skip when the content matches what we last received from the phone
+	// or last pushed outbound.
 	//
 	// lastContent guard: prevents sending the phone's own content back.
 	// lastPushedContent guard: prevents duplicate pushes when the local

@@ -80,7 +80,9 @@ func (s *Server) Listen(ctx context.Context) error {
 		return err
 	}
 
-	// Restrict socket permissions to the current user (Fault Tolerance & Security Phase 2)
+	// The socket defaults to the process umask, which is world-writable under a
+	// permissive umask. Pin it to 0600 so only the current user can drive the
+	// daemon -- the CLI has no other authentication layer.
 	if err := os.Chmod(s.path, 0600); err != nil {
 		l.Close()
 		return fmt.Errorf("failed to chmod ipc socket: %w", err)
@@ -118,7 +120,6 @@ func (s *Server) serve(ctx context.Context, l net.Listener, activated bool) erro
 }
 
 func (s *Server) handleConnection(conn net.Conn) {
-	// Read a single line (one request per connection)
 	line, err := bufio.NewReader(conn).ReadBytes('\n')
 	if err != nil {
 		conn.Close()
