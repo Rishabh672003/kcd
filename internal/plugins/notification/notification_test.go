@@ -496,3 +496,23 @@ func TestNotificationPlugin_Dismiss(t *testing.T) {
 		t.Errorf("cancel = %q, want %q", body.Cancel, "notif-123")
 	}
 }
+
+func TestNotificationPlugin_EventCarriesID(t *testing.T) {
+	// notify_dismiss and notification.canceled are keyed by this id.
+	p := newPlugin(t)
+	sub := p.bus.Subscribe(1, events.TypeNotification)
+	defer sub.Close()
+	dev := device.NewDevice("dev1", "Test", "phone", log.NewTest(t))
+	pkt, _ := protocol.NewPacket("kdeconnect.notification", NotificationBody{ID: "n-42", AppName: "App", Title: "Hi", Text: "there", IsClearable: true})
+	if err := p.Handle(context.Background(), dev, pkt); err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+	select {
+	case evt := <-sub.C:
+		if got := evt.Payload.(map[string]any)["id"]; got != "n-42" {
+			t.Fatalf("id = %v, want n-42", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("no notification event")
+	}
+}

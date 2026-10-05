@@ -123,7 +123,7 @@ type SMSMessage struct {
 	Type        int               `json:"type"`
 	ThreadID    int64             `json:"thread_id"`
 	Read        protocol.FlexBool `json:"read"`
-	UID         int64             `json:"u_id,omitempty"`
+	UID         int64             `json:"_id,omitempty"` // Telephony.Sms._ID; published as u_id
 	SubID       int               `json:"sub_id,omitempty"`
 	Attachments []SMSAttachment   `json:"attachments,omitempty"`
 }

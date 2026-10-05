@@ -119,9 +119,10 @@ Optional fields:
 {"deviceId": "a1b2c3d4e5f6_...", "accept": true, "reject": false}
 ```
 
-- If neither `accept` nor `reject` is set, sends a pair request to the device.
-- If `accept: true`, accepts an incoming pair request from the device.
-- If `reject: true`, rejects or unpairs.
+- Without `reject`, accepts the device's pending request (state
+  `PAIR_REQUESTED_BY_PEER`), or otherwise sends a pair request to it.
+  `accept: true` may be sent for clarity but is not required.
+- If `reject: true`, declines a pending request or unpairs (same as `unpair`).
 - If the device has no active connection, the daemon dials it on demand
   using its last-seen discovery address (background auto-dial no longer
   connects to unpaired devices), then sends the pair request.
@@ -311,7 +312,7 @@ Send a file to a device.
 **Request payload:**
 
 ```json
-{"deviceId": "a1b2c3d4e5f6_...", "file": "/path/to/file.pdf"}
+{"deviceId": "a1b2c3d4e5f6_...", "filePath": "/path/to/file.pdf"}
 ```
 
 **Response data:** none
@@ -355,7 +356,9 @@ Request messages from a specific conversation thread.
 {"deviceId": "a1b2c3d4e5f6_...", "threadID": 42}
 ```
 
-Optional fields: `rangeStartTimestamp` (int64), `numberToRequest` (int64).
+Optional fields, each applied on its own: `rangeStartTimestamp` (int64, ms
+epoch) returns only messages at or before it, and `numberToRequest` (int64) caps
+how many, newest first. With both omitted the phone returns the whole thread.
 
 **Response data:** none
 

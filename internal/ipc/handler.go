@@ -121,9 +121,13 @@ func (h *Handler) saveDevices() {
 }
 
 func (h *Handler) handlePair(payload []byte) Response {
-	var p DevicePayload
+	var p PairPayload
 	if err := json.Unmarshal(payload, &p); err != nil {
 		return Response{OK: false, Error: "invalid payload"}
+	}
+	// Declining a request and unpairing send the same pair=false packet.
+	if p.Reject {
+		return h.handleUnpair(payload)
 	}
 
 	dev, ok := h.devices.Get(p.DeviceID)

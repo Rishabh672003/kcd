@@ -10,6 +10,7 @@ import (
 
 	"github.com/bethropolis/kcd/internal/config"
 	"github.com/bethropolis/kcd/internal/device"
+	"github.com/bethropolis/kcd/internal/events"
 	"github.com/bethropolis/kcd/internal/log"
 	"github.com/bethropolis/kcd/internal/protocol"
 )
@@ -104,5 +105,24 @@ func TestMessagesBatchAcceptsIntReadFlag(t *testing.T) {
 		if err := p.Handle(context.Background(), &captureSender{}, pkt); err != nil {
 			t.Errorf("Handle with read=%s: %v, want nil", read, err)
 		}
+	}
+}
+
+func TestMessagesPublishAndroidMessageID(t *testing.T) {
+	// Android sends the message id as _id (Telephony.Sms._ID), not u_id.
+	bus := events.NewBus(log.Nop())
+	sub := bus.Subscribe(1, events.TypeSMSIncoming)
+	defer sub.Close()
+	p := NewSMSPlugin(config.SMSConfig{}, bus, nil, log.Nop())
+	pkt := &protocol.Packet{
+		Type: PacketTypeSMSMessages,
+		Body: json.RawMessage(`{"version":2,"messages":[{"event":1,"body":"hi","addresses":[{"address":"+1"}],"date":1711234567,"type":1,"thread_id":7,"read":1,"_id":4242}]}`),
+	}
+	if err := p.Handle(context.Background(), &captureSender{}, pkt); err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+	evt := <-sub.C
+	if got := evt.Payload.(map[string]any)["u_id"]; got != int64(4242) {
+		t.Fatalf("u_id = %v, want 4242", got)
 	}
 }
