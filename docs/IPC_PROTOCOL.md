@@ -944,6 +944,11 @@ A remote device is requesting pairing.
 The 16-character verification key should be displayed to the user to confirm
 the same key is shown on the remote device.
 
+The device ID is the event's `deviceId` field. Accept with `pair` for that ID,
+or refuse with `unpair`; this event never implies consent. A client that needs
+the advertisement window open without a listener of its own can use
+`kcd pair --advertise-only`, which starts broadcast and accepts nothing.
+
 #### `pair.accepted`
 
 A pairing was accepted.

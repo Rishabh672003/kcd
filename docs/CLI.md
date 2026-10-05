@@ -310,6 +310,52 @@ Broadcast stops when pairing completes or you press Ctrl+C.
 > Non-matching candidates are rejected and listening continues. Both flags
 > also apply to the interactive confirmation prompt.
 
+### Advertise-only mode (GUI and panel clients)
+
+```bash
+kcd pair --advertise-only
+kcd pair --advertise-only --json
+```
+
+Starts pairing advertisement, then waits. It **never accepts anything** — not
+with `--yes`, not with a device ID. It exists for clients that cannot drive the
+confirmation prompt: panels, bars, launchers, notification daemons.
+
+The problem it solves: `--yes` trusts the *first device that asks on the local
+network*, and `--expected-fingerprint` / `--known-only` only help if you already
+know the peer — which is exactly what a first-time pairing does not give you. A
+widget was therefore pushed toward `--yes` by the headless framing, which is the
+right default for a server and the wrong one for a desktop panel.
+
+With this mode, ownership of the decision stays with the owner:
+
+1. Run `kcd pair --advertise-only` (detached, or as a supervised child).
+2. Candidates arrive on your **existing** event stream as `pair.requested`,
+   carrying `deviceId` and `payload.verificationKey`. No second listener needed.
+3. Show the code; the owner compares it against the phone's prompt.
+4. Accept that one device with `kcd pair <device-id>`, or refuse with
+   `kcd unpair <device-id>`.
+
+```bash
+kcd watch --events pair.requested --json
+{"type":"pair.requested","deviceId":"a1b2c3d4...","payload":{"name":"Pixel 8 Pro","type":"phone","verificationKey":"3a8f12bc"}}
+```
+
+`--json` prints one NDJSON object when advertising starts and another when it
+stops, so a supervising client knows when the daemon is genuinely discoverable
+rather than merely that a process launched:
+
+```json
+{"advertising":true}
+```
+
+Press Ctrl+C (or send SIGTERM) to stop. Broadcast stops on every exit path,
+including an interrupt, and stopping also drops the discovery connections that
+never led to pairing.
+
+`--advertise-only` is refused in combination with `--yes` or a device ID, rather
+than silently ignoring one of them.
+
 ---
 
 ## unpair
