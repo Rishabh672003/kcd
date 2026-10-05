@@ -91,12 +91,10 @@ func buildSSHFSArgs(body SftpBody, remotePath, mountPoint string, uid, gid int, 
 // sshfsHint maps an sshfs failure message to an actionable hint, or "" when
 // the cause is not one we can advise about.
 //
-// The FUSE hint is deliberately narrow. It used to fire on any message
-// containing "fusermount", which also matched errors that have nothing to do
-// with /etc/fuse.conf — most visibly re-running sshfs onto an already live
-// mountpoint, whose message names fusermount3 but is caused by the duplicate
-// mount. Telling a user to edit fuse.conf there sends them down a dead end.
-// mountWithBody is now idempotent, but precision here is still worth having.
+// The FUSE hint deliberately matches specific causes, not the mention of
+// "fusermount" anywhere in the message. A duplicate mount onto an already live
+// mountpoint names fusermount3 but is not a /etc/fuse.conf problem, and
+// telling a user to edit that file sends them down a dead end.
 func sshfsHint(msg string) string {
 	switch {
 	case strings.Contains(msg, "Operation not permitted"),
@@ -149,13 +147,10 @@ func (p *SftpPlugin) mountWithBody(ctx context.Context, deviceID string, body Sf
 		return "", fmt.Errorf("create mount point %s: %w", mountPoint, err)
 	}
 
-	// Determine the remote path on the Android device.
-	// The Android SFTP server exposes the real filesystem at "/".
-	// Listing "/" via sshfs fails because it contains permission-denied
-	// entries (/proc, /sys). Instead, mount directly to a storage
-	// volume (e.g. /storage/emulated/0) which is guaranteed browsable.
-	// If a specific volumePath is provided, use it; otherwise auto-select
-	// the first available volume.
+	// Never mount "/" itself. The Android SFTP server exposes the real
+	// filesystem there, but listing it over sshfs fails on its
+	// permission-denied entries (/proc, /sys). Mount a storage volume
+	// (e.g. /storage/emulated/0) instead, which is guaranteed browsable.
 	remotePath := volumePath
 	if remotePath == "" {
 		if len(body.MultiPaths) > 0 {
@@ -194,7 +189,6 @@ func (p *SftpPlugin) mountWithBody(ctx context.Context, deviceID string, body Sf
 	p.mountReadOnly[deviceID] = readOnly
 	p.mu.Unlock()
 
-	// Find and track the sshfs daemon PID for graceful shutdown.
 	if pid, err := findSSHFSPID(mountPoint); err == nil {
 		p.mu.Lock()
 		p.mountPIDs[deviceID] = pid
@@ -481,31 +475,28 @@ func findSSHFSPID(mountPoint string) (int, error) {
 	return 0, fmt.Errorf("no sshfs process found for mount point %s", mountPoint)
 }
 
-// UnmountAll releases every mount the plugin is tracking, and returns once
-// they are all released or ctx is done.
-//
-// Shutdown has to do this. OnDisconnect only fires when a connection drops, so
-// a graceful stop used to leave every mount live -- and with the mount
-// directory under $XDG_STATE_HOME in the no-session fallback, `uninstall.sh
-// --purge`'s `rm -rf` would then descend into a live mount and delete the
-// phone's files. Even with the runtime-dir default, leaving a mount behind on
-// every restart is not a reasonable way to end.
-//
-// Tracked devices are the source for the list rather than the device registry:
-// this is the plugin's own record of what it believes is mounted, including
-// mounts adopted from the kernel earlier in the session.
-//
-// Unmounts run concurrently because each can take up to 13s (3s waiting for
-// sshfs to exit, then a 10s fusermount bound) and a serial loop over several
-// devices would overrun the unit's TimeoutStopSec.
+// UnmountAll releases every mount the plugin is tracking. It returns once they
+// are all released or ctx is done.
 //
 // ctx bounds how long *this call* waits, not the work itself: on expiry it
 // returns and the in-flight unmounts carry on in the background, each still
-// bounded by its own timeouts. That is the right trade only because the sole
-// caller is shutdown, where the process exits immediately afterwards and
-// systemd would SIGKILL the stragglers regardless. A caller that intends to keep
-// running must not treat an early return as "unmounted".
+// bounded by its own timeouts. That trade is only sound because the sole caller
+// is shutdown, where the process exits immediately afterwards and systemd would
+// SIGKILL the stragglers regardless. A caller that intends to keep running must
+// not treat an early return as "unmounted".
 func (p *SftpPlugin) UnmountAll(ctx context.Context) {
+	// Shutdown has to unmount explicitly: OnDisconnect only fires on a dropped
+	// connection. In the no-session fallback the mount directory sits under
+	// $XDG_STATE_HOME, where `uninstall.sh --purge`'s `rm -rf` would descend into
+	// a live mount and delete the phone's files.
+	//
+	// Tracked devices are the list source rather than the device registry: this
+	// is the plugin's own record of what it believes is mounted, including
+	// mounts adopted from the kernel earlier in the session.
+	//
+	// Unmounts run concurrently because each can take up to 13s (3s waiting for
+	// sshfs to exit, then a 10s fusermount bound) and a serial loop over several
+	// devices would overrun the unit's TimeoutStopSec.
 	p.mu.RLock()
 	ids := make([]string, 0, len(p.mountPoints))
 	for id := range p.mountPoints {

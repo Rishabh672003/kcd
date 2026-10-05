@@ -21,7 +21,6 @@ func (p *SystemVolumePlugin) getSinks() []SinkInfo {
 }
 
 func (p *SystemVolumePlugin) getSinksWpctl() []SinkInfo {
-	// Get current volume from wpctl: wpctl get-volume @DEFAULT_AUDIO_SINK@
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	out, err := plugin.RunCommandOutput(ctx, "wpctl", "get-volume", "@DEFAULT_AUDIO_SINK@")

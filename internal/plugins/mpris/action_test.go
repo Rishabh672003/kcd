@@ -68,3 +68,40 @@ func TestSendActionSendsSeekAsSetPosition(t *testing.T) {
 		}
 	}
 }
+
+// With no tracked position there is nothing to resolve a relative seek
+// against, and phones ignore Seek — so sending it would report success while
+// doing nothing. The call must fail loudly instead.
+func TestSendActionRelativeSeekWithoutStateErrors(t *testing.T) {
+	p := NewMPRISPlugin(nil, events.NewBus(log.Nop()), false, config.MPRISConfig{}, log.Nop())
+
+	dev := &captureSender{testSender: testSender{id: "phone"}}
+	err := p.SendAction(dev, "music", "", ptr[int64](30_000), nil, nil)
+	if err == nil {
+		t.Fatal("SendAction with a relative seek and no tracked state = nil error, want error")
+	}
+	if len(dev.sent) != 0 {
+		t.Errorf("sent %d packets, want 0: a seek that cannot be resolved must not go out", len(dev.sent))
+	}
+}
+
+// An absolute setPosition needs no tracked state: the phone already knows
+// where it is, so it must still work with nothing cached.
+func TestSendActionAbsoluteSeekNeedsNoState(t *testing.T) {
+	p := NewMPRISPlugin(nil, events.NewBus(log.Nop()), false, config.MPRISConfig{}, log.Nop())
+
+	dev := &captureSender{testSender: testSender{id: "phone"}}
+	if err := p.SendAction(dev, "music", "", nil, ptr[int64](42_000), nil); err != nil {
+		t.Fatalf("absolute setPosition with no tracked state: %v", err)
+	}
+	if len(dev.sent) == 0 {
+		t.Fatal("no packet sent")
+	}
+	var body map[string]any
+	if err := json.Unmarshal(dev.sent[0].Body, &body); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := body["SetPosition"].(float64); int64(got) != 42_000 {
+		t.Errorf("SetPosition = %v, want 42000", body["SetPosition"])
+	}
+}

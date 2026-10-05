@@ -49,6 +49,26 @@ const (
 	TypeStateSnapshot        EventType = "state.snapshot"
 )
 
+// All returns every known event type. TestAllMatchesConstants keeps it in step
+// with the constants above.
+func All() []EventType {
+	return []EventType{
+		TypeDeviceAdded, TypeDeviceRemoved, TypeDeviceConnected, TypeDeviceDisconnected,
+		TypePairRequested, TypePairAccepted, TypePairRejected,
+		TypeBatteryUpdate, TypeBatteryThreshold,
+		TypeNotification, TypeNotificationCanceled,
+		TypeShareProgress, TypeShareComplete, TypeShareText, TypeShareURL,
+		TypePingReceived, TypeConnectivityUpdate,
+		TypeTelephonyRinging, TypeTelephonyMissed, TypeTelephonyTalking, TypeTelephonyCanceled,
+		TypeSftpMount, TypeSftpMounted, TypeSftpUnmounted,
+		TypeRunCommandOutput,
+		TypeVolumeUpdate,
+		TypeSMSIncoming, TypeSMSAttachment,
+		TypeRingReceived, TypeContactsUpdated,
+		TypeMprisUpdate, TypeStateSnapshot,
+	}
+}
+
 const (
 	// DefaultSubscriberCap is the channel buffer size for plugin-internal
 	// subscribers (battery test waits, sftp credential waits, etc.).
@@ -58,6 +78,13 @@ const (
 	// Larger to tolerate slow CLI consumers (jq, SSH, slow terminals).
 	WatchSubscriberCap = 256
 )
+
+// OptInOnly lists event types a subscriber must name explicitly. An unfiltered
+// Subscribe does not match them, which is what stops a bare `kcd watch` from
+// receiving message bodies and arming the phone.
+func OptInOnly() []EventType {
+	return []EventType{TypeSMSIncoming, TypeSMSAttachment}
+}
 
 // Event represents a single occurrence of something interesting in the daemon.
 type Event struct {
@@ -82,11 +109,24 @@ func (s *Subscriber) Close() {
 }
 
 func (s *Subscriber) matches(typ EventType) bool {
+	// An unfiltered subscriber gets everything except the opt-in types. Not
+	// doing this in the caller is what let a bare `kcd watch` receive message
+	// bodies and arm the phone: HasSubscribers arms on this same predicate, so
+	// an SMS subscriber is also permission to start the push.
 	if len(s.filters) == 0 {
-		return true
+		return !isOptInOnly(typ)
 	}
 	for _, f := range s.filters {
 		if f == typ {
+			return true
+		}
+	}
+	return false
+}
+
+func isOptInOnly(typ EventType) bool {
+	for _, t := range OptInOnly() {
+		if t == typ {
 			return true
 		}
 	}
@@ -115,7 +155,7 @@ func NewBus(logger log.Logger) *Bus {
 
 // Subscribe returns a new subscriber that receives events matching the filters.
 // capacity sets the channel buffer size; pass 0 or DefaultSubscriberCap for the standard 64-event buffer.
-// If filters is empty, it receives all events.
+// If filters is empty, it receives everything except the opt-in types.
 func (b *Bus) Subscribe(capacity int, filters ...EventType) *Subscriber {
 	b.mu.Lock()
 

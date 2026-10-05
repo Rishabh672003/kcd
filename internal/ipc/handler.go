@@ -132,7 +132,7 @@ func (h *Handler) handlePair(payload []byte) Response {
 	}
 
 	// Pairing needs an active connection (pair packets go over TLS).
-	// Background auto-dial no longer connects to unpaired strangers, so an
+	// Background auto-dial never connects to unpaired strangers, so an
 	// explicit `kcd pair <id>` triggers the on-demand dial hook when one is
 	// wired (the daemon always sets it). Without a hook, fall through to the
 	// legacy paths below.
@@ -143,11 +143,9 @@ func (h *Handler) handlePair(payload []byte) Response {
 		return Response{OK: true}
 	}
 
-	// Use the pair plugin to handle pairing properly
 	if h.pairPlugin != nil {
 		state := dev.State()
 		if state == device.StatePairRequestedByPeer {
-			// Accept pending request
 			if err := h.pairPlugin.AcceptPairing(dev); err != nil {
 				return Response{OK: false, Error: "failed to accept pairing: " + err.Error()}
 			}
@@ -165,7 +163,7 @@ func (h *Handler) handlePair(payload []byte) Response {
 		return Response{OK: true}
 	}
 
-	// Fallback if no pair plugin (shouldn't happen)
+	// No pair plugin registered; send the bare packet.
 	pkt, _ := protocol.NewPairPacket(protocol.PairAccept, 0)
 	if err := dev.Send(pkt); err != nil {
 		return Response{OK: false, Error: "failed to send pair packet"}
@@ -188,7 +186,6 @@ func (h *Handler) handleUnpair(payload []byte) Response {
 		return Response{OK: false, Error: "device not found"}
 	}
 
-	// Use the pair plugin to handle unpairing properly
 	if h.pairPlugin != nil {
 		if err := h.pairPlugin.Unpair(dev); err != nil {
 			return Response{OK: false, Error: "failed to unpair: " + err.Error()}

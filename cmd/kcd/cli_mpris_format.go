@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -44,6 +45,93 @@ func parseSeek(s string) (int64, error) {
 		return 0, fmt.Errorf("invalid offset %q", s)
 	}
 	return d, nil
+}
+
+// errSeekHelp signals that SkipFlagParsing kept the help flag from being
+// handled, so the caller shows the command's help itself.
+var errSeekHelp = errors.New("seek: help requested")
+
+// seekArgs is the parsed argument list of `kcd mpris seek`.
+type seekArgs struct {
+	device string
+	player string
+	offset string
+}
+
+// splitSeekArgs recovers --device/--player and the offset from a raw argument
+// list, for a command running with SkipFlagParsing.
+//
+// A "-" followed by a digit is always the offset: no flag this command takes
+// has a numeric value, so nothing is ambiguous. Anything else beginning with
+// "-" is an error rather than silently ignored.
+func splitSeekArgs(args []string) (seekArgs, error) {
+	var out seekArgs
+	var offset string
+	flagsDone := false
+
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case flagsDone || arg == "":
+			offset = firstNonEmpty(offset, arg)
+		case arg == "--":
+			flagsDone = true
+		case arg == "-h" || arg == "--help":
+			return out, errSeekHelp
+		case arg == "-p" || arg == "--player":
+			v, ok := nextValue(args, &i)
+			if !ok {
+				return out, fmt.Errorf("seek: %s requires a value", arg)
+			}
+			out.player = v
+		case strings.HasPrefix(arg, "--player="):
+			out.player = strings.TrimPrefix(arg, "--player=")
+		case isNegativeOffset(arg):
+			offset = firstNonEmpty(offset, arg)
+		case arg == "--device":
+			v, ok := nextValue(args, &i)
+			if !ok {
+				return out, fmt.Errorf("seek: --device requires a value")
+			}
+			out.device = v
+		case strings.HasPrefix(arg, "--device="):
+			out.device = strings.TrimPrefix(arg, "--device=")
+		case strings.HasPrefix(arg, "-"):
+			return out, fmt.Errorf("seek: unknown flag %q (use %q alone, or -- -10s, for a backward seek)", arg, "kcd mpris seek -10s")
+		default:
+			offset = firstNonEmpty(offset, arg)
+		}
+	}
+
+	if offset == "" {
+		return out, fmt.Errorf("seek: missing offset argument")
+	}
+	out.offset = offset
+	return out, nil
+}
+
+// isNegativeOffset reports whether arg is a negative offset like "-10s": a
+// "-" followed by a digit.
+func isNegativeOffset(arg string) bool {
+	if len(arg) < 2 || arg[0] != '-' {
+		return false
+	}
+	return arg[1] >= '0' && arg[1] <= '9'
+}
+
+func nextValue(args []string, i *int) (string, bool) {
+	if *i+1 >= len(args) {
+		return "", false
+	}
+	*i++
+	return args[*i], true
+}
+
+func firstNonEmpty(cur, v string) string {
+	if cur != "" {
+		return cur
+	}
+	return v
 }
 
 func parseDuration(s string) (int64, error) {

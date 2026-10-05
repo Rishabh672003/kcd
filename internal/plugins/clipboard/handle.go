@@ -22,7 +22,6 @@ import (
 
 // Handle processes incoming clipboard packets.
 func (p *ClipboardPlugin) Handle(ctx context.Context, dev device.Sender, pkt *protocol.Packet) error {
-	// Handle image/file clipboard transfer
 	if pkt.Type == "kdeconnect.clipboard.file" {
 		return p.handleClipboardFile(ctx, dev, pkt)
 	}

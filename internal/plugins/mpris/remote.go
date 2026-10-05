@@ -2,6 +2,7 @@ package mpris
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -11,9 +12,6 @@ import (
 	"github.com/bethropolis/kcd/internal/protocol"
 )
 
-// SendAction sends a media control action to a remote device.
-// Sends on both kdeconnect.mpris (for Android's old MprisPlugin) and
-// kdeconnect.mpris.request (for MprisReceiverPlugin) to maximise compatibility.
 // canonicalActions maps lowercase action names to the phone's spelling.
 var canonicalActions = map[string]string{
 	"play":      "Play",
@@ -32,17 +30,26 @@ func CanonicalAction(action string) string {
 	return action
 }
 
-// SendAction sends a control request to a remote player. A relative seek is
-// sent as SetPosition computed from the tracked position.
+// SendAction sends a control request to a remote player, on both
+// kdeconnect.mpris (Android's old MprisPlugin) and kdeconnect.mpris.request
+// (MprisReceiverPlugin). A relative seek becomes a SetPosition, which needs a
+// tracked position and errors without one.
 func (p *MPRISPlugin) SendAction(dev device.Sender, player, action string, seek, setPosition *int64, volume *int) error {
 	if setPosition == nil && seek != nil {
-		if state := p.RemoteState(dev.ID()); state != nil {
-			pos := max(state.Pos+*seek, 0)
-			if state.Length > 0 {
-				pos = min(pos, state.Length)
-			}
-			setPosition, seek = &pos, nil
+		state := p.RemoteState(dev.ID())
+		if state == nil {
+			// Phones ignore Seek, so without a tracked position there is
+			// nothing to resolve against. Sending it would report success
+			// while doing nothing.
+			return fmt.Errorf(
+				"cannot apply a relative seek for %s: no playback position known yet (the phone has not reported one, or it was cleared by a disconnect); retry, or pass an absolute setPosition",
+				player)
 		}
+		pos := max(state.Pos+*seek, 0)
+		if state.Length > 0 {
+			pos = min(pos, state.Length)
+		}
+		setPosition, seek = &pos, nil
 	}
 	if setPosition != nil {
 		seek = nil // send only one

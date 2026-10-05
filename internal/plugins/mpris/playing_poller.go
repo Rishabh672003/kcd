@@ -26,8 +26,7 @@ func (p *MPRISPlugin) storeLocalState(displayName string, state *NowPlaying) {
 // poller itself, so gating on it deadlocks: lose one PlaybackStatus
 // signal and the cache stays "paused", so the poller never arms, so
 // nothing ever refreshes the cache — and no further PlaybackStatus
-// signal arrives until the next pause/play. The removed 2s timer used
-// to break that deadlock by refreshing unconditionally.
+// signal arrives until the next pause/play.
 //
 // Instead any observed change arms the poller, and the poller decides
 // its own lifetime from live D-Bus reads. A paused desktop pays one

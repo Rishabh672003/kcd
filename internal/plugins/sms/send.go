@@ -28,7 +28,7 @@ func (p *SMSPlugin) SendSMS(dev device.Sender, phoneNumber, message string) erro
 	return dev.Send(pkt)
 }
 
-// --- Conversation browsing (Phase 2) ---------------------------------------
+// --- Conversation browsing ------------------------------------------------
 
 // RequestConversations asks the phone for a summary of all conversations.
 // Bodyless requests use an empty object (never null) on the wire; see

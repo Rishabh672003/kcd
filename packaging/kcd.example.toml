@@ -7,6 +7,12 @@
 
 # ─── Identity ─────────────────────────────────────────────────────────────────
 
+# Stable identifier used for pairing and certificate fingerprint checks.
+# Generated once on first run and written back here. Never edit it: changing it
+# makes every paired device fail to authenticate, and you would have to
+# re-pair each one.
+# device_id = ""
+
 # The name other devices see when discovering this machine.
 # Default: system hostname.
 # device_name = "my-desktop"
@@ -312,10 +318,11 @@ suspend = "systemctl suspend"
 # notify_incoming = true       # show a desktop notification on incoming SMS
 # always_arm = false           # Ask the phone to push new SMS on every
                                # connect, so notifications work with no
-                               # client attached. Off by default because an
-                               # armed phone cannot be un-armed; without it,
-                               # `kcd watch --events sms.incoming` receives
-                               # messages instead.
+                               # client attached.
+#
+# `kcd sms conversations` / `kcd sms conversation` arm the phone as a side
+# effect — it starts pushing every new message and cannot be stopped from this
+# side. Stop the SMS plugin on the device to end that.
 
 # ─── Mousepad: remote input settings ─────────────────────────────────────────
 

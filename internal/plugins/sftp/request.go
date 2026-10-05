@@ -137,7 +137,6 @@ func (p *SftpPlugin) MountLocally(ctx context.Context, deviceID string, readOnly
 }
 
 // Info returns the cached SFTP connection details for a device.
-// Returns nil if no credentials have been received yet.
 //
 // includePassword gates the credential: it is a working password for the
 // phone's SFTP server, and `kcd sftp info` is an informational command whose
@@ -218,8 +217,8 @@ func (p *SftpPlugin) MountedPath(deviceID string) string {
 	}
 
 	// The kernel is the source of truth. The configured location first, then
-	// the location mounts used to default to, so a mount made before the
-	// default moved is still found rather than orphaned.
+	// the location that preceded it as the default, so a mount made before
+	// the default moved is still found rather than orphaned.
 	if mountPoint = p.adoptIfMounted(deviceID, p.mountPointFor(deviceID)); mountPoint != "" {
 		return mountPoint
 	}

@@ -13,7 +13,10 @@ import (
 )
 
 const (
-	// AllowedTimestampDiff is the maximum allowed time difference for pairing timestamps (30 min)
+	// AllowedTimestampDiff bounds the clock skew accepted when validating a
+	// pairing timestamp. Two peers whose clocks disagree by more than this
+	// refuse to pair, so it has to cover real-world drift without leaving a
+	// replay window wide enough to be useful. 30 min.
 	AllowedTimestampDiff = 1800
 )
 

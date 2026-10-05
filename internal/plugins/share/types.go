@@ -78,7 +78,8 @@ func NewSharePlugin(downloadDir string, cfg config.ShareConfig, tlsConfig *tls.C
 	}
 }
 
-// ShareBody includes the missing Android metadata (LastModified/CreationTime)
+// ShareBody carries the file metadata Android omits from its own
+// kdeconnect.share packet type, which sends only filename and open flags.
 type ShareBody struct {
 	Filename         string `json:"filename"`
 	NumberOfFiles    int    `json:"numberOfFiles,omitempty"`

@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -270,19 +271,25 @@ var mprisCmd = &cli.Command{
 			},
 		},
 		{
-			Name:      "seek",
-			Usage:     "Seek to position or by offset. Examples: +30s, -10s, 1m30s, 45 (seconds)",
-			ArgsUsage: "<offset>",
+			Name:  "seek",
+			Usage: "Seek to position or by offset. Examples: +30s, -10s, 1m30s, 45 (seconds)",
+			// So a backward seek reaches parseSeek intact rather than being
+			// rejected as an unknown flag.
+			SkipFlagParsing: true,
+			ArgsUsage:       "<offset>",
 			Flags: []cli.Flag{
 				&cli.StringFlag{Name: "device", Usage: "Target device ID"},
 				&cli.StringFlag{Name: "player", Aliases: []string{"p"}, Usage: "Player name"},
 			},
 			Action: func(c *cli.Context) error {
-				if c.Args().Len() < 1 {
-					return fmt.Errorf("seek: missing offset argument")
+				opts, err := splitSeekArgs(c.Args().Slice())
+				if errors.Is(err, errSeekHelp) {
+					return cli.ShowSubcommandHelp(c)
 				}
-				offsetStr := c.Args().First()
-				seek, err := parseSeek(offsetStr)
+				if err != nil {
+					return err
+				}
+				seek, err := parseSeek(opts.offset)
 				if err != nil {
 					return fmt.Errorf("seek: %w", err)
 				}
@@ -290,7 +297,7 @@ var mprisCmd = &cli.Command{
 				if err != nil {
 					return err
 				}
-				return cl.MprisSeek(c.String("device"), c.String("player"), seek)
+				return cl.MprisSeek(opts.device, opts.player, seek)
 			},
 		},
 		{

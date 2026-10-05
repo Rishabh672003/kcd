@@ -17,6 +17,8 @@ These flags apply to every command:
 
 `--config` and `--log-level` can also be set via environment variables `KCD_CONFIG` and `KCD_LOG_LEVEL`.
 
+Flags must come before positional arguments (`kcd battery --json <device-id>`, not `kcd battery <device-id> --json`). Anything after the first positional is treated as an argument, so a trailing flag is silently ignored rather than rejected.
+
 ---
 
 ## Configuration
@@ -310,6 +312,52 @@ Broadcast stops when pairing completes or you press Ctrl+C.
 > Non-matching candidates are rejected and listening continues. Both flags
 > also apply to the interactive confirmation prompt.
 
+### Advertise-only mode (GUI and panel clients)
+
+```bash
+kcd pair --advertise-only
+kcd pair --advertise-only --json
+```
+
+Starts pairing advertisement, then waits. It **never accepts anything** — not
+with `--yes`, not with a device ID. It exists for clients that cannot drive the
+confirmation prompt: panels, bars, launchers, notification daemons.
+
+The problem it solves: `--yes` trusts the *first device that asks on the local
+network*, and `--expected-fingerprint` / `--known-only` only help if you already
+know the peer — which is exactly what a first-time pairing does not give you. A
+widget was therefore pushed toward `--yes` by the headless framing, which is the
+right default for a server and the wrong one for a desktop panel.
+
+With this mode, ownership of the decision stays with the owner:
+
+1. Run `kcd pair --advertise-only` (detached, or as a supervised child).
+2. Candidates arrive on your **existing** event stream as `pair.requested`,
+   carrying `deviceId` and `payload.verificationKey`. No second listener needed.
+3. Show the code; the owner compares it against the phone's prompt.
+4. Accept that one device with `kcd pair <device-id>`, or refuse with
+   `kcd unpair <device-id>`.
+
+```bash
+kcd watch --events pair.requested --json
+{"type":"pair.requested","deviceId":"a1b2c3d4...","payload":{"name":"Pixel 8 Pro","type":"phone","verificationKey":"3a8f12bc"}}
+```
+
+`--json` prints one NDJSON object when advertising starts and another when it
+stops, so a supervising client knows when the daemon is genuinely discoverable
+rather than merely that a process launched:
+
+```json
+{"advertising":true}
+```
+
+Press Ctrl+C (or send SIGTERM) to stop. Broadcast stops on every exit path,
+including an interrupt, and stopping also drops the discovery connections that
+never led to pairing.
+
+`--advertise-only` is refused in combination with `--yes` or a device ID, rather
+than silently ignoring one of them.
+
 ---
 
 ## unpair
@@ -531,6 +579,13 @@ kcd mpris seek +30s
 kcd mpris seek -10s
 kcd mpris seek 1m30s
 ```
+
+A signed offset is sent to the phone as an absolute position computed from the
+last reported one, because KDE Connect Android implements `SetPosition` but
+ignores `Seek`. That needs a known position: if the phone has never reported
+one (or it was cleared by a disconnect), the command fails with an error rather
+than silently doing nothing. An absolute offset or a bare number goes straight
+through and needs no cached state.
 
 ### mpris raw
 
@@ -766,8 +821,11 @@ SD card                  →  /storage/ABCD-1234
 Request credentials and immediately mount the phone's filesystem using `sshfs`.
 
 ```
-kcd sftp mount <device-id>
+kcd sftp mount <device-id> [--ro] [--no-ro]
 ```
+
+Mounts under `$XDG_RUNTIME_DIR/kcd/mnt` (`/run/user/1000/kcd/mnt`) unless
+`[sftp] mount_dir` is set.
 
 Waits up to `[sftp] credentials_timeout_secs` for the phone to start its SFTP
 server. If it does not answer, the phone is either not running KDE Connect or
@@ -778,10 +836,6 @@ that message rather than a socket timeout.
 The mount point is printed to stdout. Mounting is idempotent: if the device
 is already mounted, the existing mount point is returned and `sshfs` is not run
 again, so repeating the command is a cheap way to re-open the file manager.
-
-```
-kcd sftp mount <device-id> [--ro] [--no-ro]
-```
 
 `--ro` mounts read-only, so writes and deletions fail locally instead of
 reaching the phone. `--no-ro` forces writable when `[sftp] read_only = true`.
@@ -940,6 +994,14 @@ Request messages from a specific conversation thread.
 ```
 kcd sms conversation <device-id> <thread-id>
 ```
+
+> **Both commands arm the phone, permanently.** The phone latches on its first
+> request and cannot be un-armed — after either of these it pushes *every* new
+> message, and kcd cannot stop it. The only way to end that is to stop the SMS
+> plugin on the device.
+>
+> No client is listening for SMS at that point, so nothing is delivered and
+> nothing is stored. The packets still cross the wire.
 
 ### sms attachment
 
@@ -1165,9 +1227,11 @@ kcd watch --events=sms.incoming
 ```
 
 The phone pushes messages as they arrive, so this needs no polling and no
-request command. Since `[sms] always_arm` is off by default, this
-subscription is also what arms the push — nothing is asked of the phone
-until it is running.
+request command. Naming the event is the whole opt-in: it is also what arms the
+phone, so `[sms] always_arm` is not needed here.
+
+SMS is never delivered to an unfiltered `kcd watch`. Naming it with `-e` is what
+arms the phone, which is why an incidental `kcd watch` cannot start the push.
 
 **Raw NDJSON for scripting**
 

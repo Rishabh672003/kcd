@@ -135,7 +135,6 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	// 3. Plugin Registry
 	plugins := plugin.NewRegistry(logger)
 
-	// Parse local cert for verification keys
 	var localCert *x509.Certificate
 	if len(certPair.Certificate) > 0 {
 		localCert, _ = x509.ParseCertificate(certPair.Certificate[0])
@@ -240,7 +239,6 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	// 6. Transport Layer
 	go runTransport(ctx, tlsCfg, bc, identity, devices, plugins, cfg.DeviceID, logger, cfg)
 
-	// Wait for context cancellation (SIGTERM)
 	if notifySocket := os.Getenv("NOTIFY_SOCKET"); notifySocket != "" {
 		addr := &net.UnixAddr{Name: notifySocket, Net: "unixgram"}
 		if strings.HasPrefix(notifySocket, "@") {
@@ -298,9 +296,9 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	logger.Info("kcd daemon shutting down")
 
 	// Release SFTP mounts before returning. OnDisconnect only fires on a
-	// dropped connection, so a graceful stop used to leave every mount live.
-	// Bounded well under the unit's TimeoutStopSec so systemd does not SIGKILL
-	// us part-way through and strand one.
+	// dropped connection, so a graceful stop must unmount explicitly or every
+	// mount stays live. Bounded well under the unit's TimeoutStopSec so
+	// systemd does not SIGKILL us part-way through and strand one.
 	if pl, ok := plugins.GetByName("SFTP"); ok {
 		unmountCtx, unmountCancel := context.WithTimeout(context.Background(), shutdownUnmountBudget)
 		pl.(*sftp.SftpPlugin).UnmountAll(unmountCtx)

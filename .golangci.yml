@@ -11,6 +11,8 @@ linters:
     - unparam
     - misspell
     - depguard
+    - godot
+    - godox
   disable:
     - errcheck
 

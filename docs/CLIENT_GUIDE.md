@@ -154,6 +154,24 @@ if resp["ok"]:
 > Your client must ask the user and then call `pair` (accept) or `unpair`
 > (reject), mirroring `kcd pair` / `kcd pair --yes`.
 
+### Do not shell out to `kcd pair -y`
+
+`kcd pair -y` accepts the first device that asks, from any device on the local
+network. That is the right behaviour for a headless server and the wrong one for
+a panel, bar or launcher — and it is what a client reaches for when it has no
+TTY to prompt on.
+
+Two better shapes, both of which keep the owner in the decision:
+
+**Poll `pair_listen` in a thread** (above). It is report-only and has no prompt,
+so it suits a client that does not already subscribe to the event stream.
+
+**Observe `pair.requested` instead** if you already run a `watch` stream — the
+pair plugin publishes it with the verification key, so no second listener is
+needed. `kcd pair --advertise-only` exists to open the advertisement window
+without any acceptance path; drive it as a supervised child and stop it on
+shutdown.
+
 ### 3.3 Unpairing
 
 ```python
@@ -378,8 +396,9 @@ ipc_request(sock, "mpris_action", {"deviceId": dev_id, "action": "playpause"})
 # Next track
 ipc_request(sock, "mpris_action", {"deviceId": dev_id, "action": "next"})
 
-# Set volume
-ipc_request(sock, "mpris_action", {"deviceId": dev_id, "action": "setVolume", "value": 50})
+# Set volume. Volume is its own field, not an action — the payload has no
+# "value" key, so {"action": "setVolume"} sends nothing and still returns ok.
+ipc_request(sock, "mpris_action", {"deviceId": dev_id, "volume": 50})
 ```
 
 ### 5.5 Send SMS
@@ -672,8 +691,21 @@ class MediaController:
         })
 
     def set_volume(self, vol):
+        # Volume is a separate payload field. "setVolume" is not an action.
         ipc_request(self.sock, "mpris_action", {
-            "deviceId": self.dev_id, "action": "setVolume", "value": vol
+            "deviceId": self.dev_id, "volume": vol
+        })
+
+    def seek_relative(self, delta_ms):
+        # Needs a tracked position; errors otherwise. Phones ignore "seek".
+        return ipc_request(self.sock, "mpris_action", {
+            "deviceId": self.dev_id, "seek": delta_ms
+        })
+
+    def seek_absolute(self, pos_ms):
+        # Always works: the phone already knows where it is.
+        return ipc_request(self.sock, "mpris_action", {
+            "deviceId": self.dev_id, "setPosition": pos_ms
         })
 ```
 

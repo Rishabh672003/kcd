@@ -81,7 +81,6 @@ func (p *SharePlugin) SendFile(ctx context.Context, dev device.Sender, filePath 
 
 	modTime := stat.ModTime().UnixMilli()
 
-	// Send invite packet with strict metadata
 	pkt, err := protocol.NewPacket("kdeconnect.share.request", ShareBody{
 		Filename:         filepath.Base(filePath),
 		NumberOfFiles:    1,

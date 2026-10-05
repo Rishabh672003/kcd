@@ -135,7 +135,6 @@ func (p *RunCommandPlugin) Handle(ctx context.Context, dev device.Sender, pkt *p
 		cmds := p.Commands
 		p.Mu.RUnlock()
 
-		// Check per-device first, then global.
 		cmdStr, ok := perDev[body.Key]
 		if !ok {
 			cmdStr, ok = cmds[body.Key]
@@ -183,7 +182,7 @@ func (p *RunCommandPlugin) Handle(ctx context.Context, dev device.Sender, pkt *p
 				text = text[:4000] + "\n...[output truncated]"
 			}
 
-			// Send notification back to the phone.
+			// Sent back to the phone as a notification.
 			// The Android app uses 'appName' as the title and 'ticker' as the body.
 			// It ignores 'title' and 'text'.
 			notifBody := map[string]interface{}{

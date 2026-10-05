@@ -691,7 +691,9 @@ sent in the spelling the phone expects, so `"playpause"` works too. Set the
 volume with a `"volume"` field (int, 0–100). Seek with `"setPosition"` (int64,
 absolute position in ms) or `"seek"` (int64, relative offset in ms, converted
 to an absolute position from the tracked playback state, since phones only
-implement absolute positioning). `action` may be omitted for any of these.
+implement absolute positioning). A `"seek"` with no tracked position is
+rejected with an error rather than sent as a no-op — use `"setPosition"` if you
+already know the target. `action` may be omitted for any of these.
 
 **Response data:** none
 
@@ -853,6 +855,11 @@ The `events` filter is applied on the server side. Only events whose type
 string exactly matches one of the filters are delivered. Invalid/unknown
 filter strings are silently ignored — they simply match nothing.
 
+Omitting `events` does **not** mean everything: the SMS types are excluded,
+because a subscriber that matches them also arms the phone and receives message
+bodies. Naming `sms.incoming` is the entire opt-in — it arms the phone and
+receives the pushes, with no separate configuration.
+
 ### Reconnection
 
 The official `kcd watch` CLI client implements automatic reconnection with
@@ -936,6 +943,11 @@ A remote device is requesting pairing.
 
 The 16-character verification key should be displayed to the user to confirm
 the same key is shown on the remote device.
+
+The device ID is the event's `deviceId` field. Accept with `pair` for that ID,
+or refuse with `unpair`; this event never implies consent. A client that needs
+the advertisement window open without a listener of its own can use
+`kcd pair --advertise-only`, which starts broadcast and accepts nothing.
 
 #### `pair.accepted`
 
@@ -1251,6 +1263,9 @@ Device volume level changed (sent in two shapes).
 ```
 
 ### 5.11 SMS Events
+
+Opt-in. Naming the type is what subscribes to it; an unfiltered watch stream
+does not receive these.
 
 #### `sms.incoming`
 

@@ -51,7 +51,6 @@ func ReadPlaintextPacket(conn net.Conn) (*protocol.Packet, net.Conn, error) {
 		if err != nil {
 			return nil, conn, fmt.Errorf("transport: failed to save buffered bytes: %w", err)
 		}
-		// Return a wrapped connection that replays the buffered bytes
 		replayReader := io.MultiReader(bytes.NewReader(buf), conn)
 		return pkt, &bufferedConn{Conn: conn, r: replayReader}, nil
 	}

@@ -43,8 +43,8 @@ func (p *MPRISPlugin) runDBusWatcher(ctx context.Context) error {
 	entries, err := listPlayersDBus(p.dbus)
 	if err != nil {
 		// Not fatal: the watcher keeps running so NameOwnerChanged can
-		// still pick players up as they appear. Logging matters — this
-		// error used to be discarded, leaving an empty tracker with no
+		// still pick players up as they appear. Logged because an
+		// unlogged failure here presents as an empty tracker with no
 		// clue why.
 		p.logger.Warn("mpris: initial player listing failed", log.Error(err))
 	}

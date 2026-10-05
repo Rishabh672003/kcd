@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/signal"
@@ -11,6 +12,7 @@ import (
 	"github.com/bethropolis/kcd/internal/device"
 	"github.com/bethropolis/kcd/internal/ipc"
 	"github.com/bethropolis/kcd/internal/protocol"
+	"github.com/bethropolis/kcd/pkg/client"
 	"github.com/urfave/cli/v2"
 )
 
@@ -20,7 +22,9 @@ var pairCmd = &cli.Command{
 	Usage: "Initiate pairing or accept incoming requests",
 	Description: `With a device ID: send a pair request to that device (or accept if they already requested).
 
-Without a device ID: enter listen mode to receive and verify incoming pairing requests.`,
+Without a device ID: enter listen mode to receive and verify incoming pairing requests.
+
+With --advertise-only: make this machine discoverable and wait, accepting nothing. For clients that cannot prompt.`,
 	ArgsUsage: "[device-id]",
 	Flags: []cli.Flag{
 		&cli.BoolFlag{
@@ -36,11 +40,26 @@ Without a device ID: enter listen mode to receive and verify incoming pairing re
 			Name:  "known-only",
 			Usage: "Only accept candidates already recorded in the known-devices file",
 		},
+		&cli.BoolFlag{
+			Name:  "advertise-only",
+			Usage: "Make the daemon discoverable for pairing, then wait. Accepts nothing (headless mode)",
+		},
+		&cli.BoolFlag{
+			Name:  "json",
+			Usage: "With --advertise-only: print a machine-readable line when advertising starts",
+		},
 	},
 	Action: func(c *cli.Context) error {
 		cl, err := getClient(c)
 		if err != nil {
 			return err
+		}
+
+		if c.Bool("advertise-only") {
+			if err := checkAdvertiseOnly(c); err != nil {
+				return err
+			}
+			return advertiseOnly(c, cl)
 		}
 
 		if c.NArg() >= 1 {
@@ -158,6 +177,66 @@ Without a device ID: enter listen mode to receive and verify incoming pairing re
 			}
 		}
 	},
+}
+
+// checkAdvertiseOnly rejects flag combinations that contradict the mode's one
+// guarantee: that it never accepts. Refusing is safer than silently ignoring
+// the other flag, since the caller is a program trusting these semantics.
+func checkAdvertiseOnly(c *cli.Context) error {
+	if c.NArg() >= 1 {
+		return fmt.Errorf("pair: --advertise-only takes no device ID")
+	}
+	if c.Bool("yes") {
+		return fmt.Errorf("pair: --advertise-only never accepts, so it cannot be combined with --yes")
+	}
+	return nil
+}
+
+// advertiseOnly makes the daemon discoverable for pairing and then blocks,
+// without ever accepting anything. A GUI or panel cannot drive the interactive
+// prompt, so without this the only non-interactive option is --yes, which
+// trusts the first device that asks on the local network.
+func advertiseOnly(c *cli.Context, cl *client.Client) error {
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(sigCh)
+
+	stop := make(chan struct{})
+	go func() {
+		<-sigCh
+		close(stop)
+	}()
+
+	return advertiseUntil(c, cl, stop)
+}
+
+// advertiseUntil is advertiseOnly with the stop condition injected, so tests do
+// not have to signal the test binary itself.
+func advertiseUntil(c *cli.Context, cl *client.Client, stop <-chan struct{}) error {
+	if err := cl.BroadcastStart(); err != nil {
+		return fmt.Errorf("failed to start broadcast: %w", err)
+	}
+	// Symmetric with the listen path, so an interrupted run does not leave the
+	// daemon advertising. BroadcastStop also drops the discovery connections
+	// that never led to pairing, so strangers do not linger.
+	defer func() { _ = cl.BroadcastStop() }()
+
+	// A supervising client needs to know when the daemon is actually
+	// discoverable, not merely that the process launched.
+	if c.Bool("json") {
+		_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"advertising": true})
+	} else {
+		fmt.Println("Advertising for pairing requests. Nothing will be accepted; Ctrl+C to stop.")
+	}
+
+	<-stop
+
+	if c.Bool("json") {
+		_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"advertising": false})
+	} else {
+		fmt.Println("\nStopped advertising")
+	}
+	return nil
 }
 
 var unpairCmd = &cli.Command{

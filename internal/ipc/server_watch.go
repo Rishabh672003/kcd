@@ -24,7 +24,6 @@ func (s *Server) handleWatch(conn net.Conn, payload []byte) {
 		return
 	}
 
-	// Send OK response to indicate stream is starting
 	s.writeResponse(conn, Response{OK: true})
 
 	// Full-state snapshot first: every known device (online AND offline)
@@ -52,7 +51,6 @@ func (s *Server) handleWatch(conn net.Conn, payload []byte) {
 			"type": dev.Type,
 		}
 
-		// Send initial connected event
 		initEv := map[string]interface{}{
 			"type":      "device.connected",
 			"deviceId":  dev.ID(),
@@ -65,8 +63,8 @@ func (s *Server) handleWatch(conn net.Conn, payload []byte) {
 			return
 		}
 
-		// Send initial battery event, but only when the daemon actually
-		// has a reading. Emitting zero values for a fresh pair would
+		// Only when the daemon actually has a reading. Emitting zero
+		// values for a fresh pair would
 		// publish a bogus stable 0% (see Device.HasBattery) — same
 		// skip-if-absent rule as connectivity below.
 		if dev.HasBattery() {
@@ -131,7 +129,8 @@ func (s *Server) handleWatch(conn net.Conn, payload []byte) {
 		}
 	}
 
-	// Subscribe
+	// An empty filter matches everything except the opt-in types, which
+	// Subscriber.matches handles — see events.OptInOnly.
 	var filters []events.EventType
 	for _, e := range p.Events {
 		filters = append(filters, events.EventType(e))

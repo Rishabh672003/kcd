@@ -29,7 +29,6 @@ func readLocalBattery() (int, bool, error) {
 			}
 			base := filepath.Join(root, name)
 
-			// Read capacity (0-100)
 			capRaw, err := os.ReadFile(filepath.Join(base, "capacity"))
 			if err != nil {
 				continue
@@ -39,7 +38,6 @@ func readLocalBattery() (int, bool, error) {
 				continue
 			}
 
-			// Read status (Charging/Discharging/Full/Unknown)
 			statusRaw, _ := os.ReadFile(filepath.Join(base, "status"))
 			status := strings.TrimSpace(string(statusRaw))
 			charging := status == "Charging"

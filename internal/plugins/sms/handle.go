@@ -72,6 +72,8 @@ func (p *SMSPlugin) handleMessages(_ context.Context, dev device.Sender, pkt *pr
 			log.Int64("thread_id", msg.ThreadID),
 		)
 
+		// Reaching here means a subscriber named sms.incoming, since an
+		// unfiltered watch stream excludes it. That naming is the consent.
 		if p.bus != nil {
 			payload := map[string]any{
 				"body":      msg.Body,
