@@ -80,26 +80,10 @@ const (
 )
 
 // OptInOnly lists event types a subscriber must name explicitly. An unfiltered
-// Subscribe matches them, which would let a bare `kcd watch` arm the phone and
-// print message bodies.
+// Subscribe does not match them, which is what stops a bare `kcd watch` from
+// receiving message bodies and arming the phone.
 func OptInOnly() []EventType {
 	return []EventType{TypeSMSIncoming, TypeSMSAttachment}
-}
-
-// AllExceptOptIn is every event type except the opt-in-only ones.
-func AllExceptOptIn() []EventType {
-	excluded := make(map[EventType]bool)
-	for _, t := range OptInOnly() {
-		excluded[t] = true
-	}
-	all := All()
-	out := make([]EventType, 0, len(all))
-	for _, t := range all {
-		if !excluded[t] {
-			out = append(out, t)
-		}
-	}
-	return out
 }
 
 // Event represents a single occurrence of something interesting in the daemon.
@@ -125,11 +109,24 @@ func (s *Subscriber) Close() {
 }
 
 func (s *Subscriber) matches(typ EventType) bool {
+	// An unfiltered subscriber gets everything except the opt-in types. Not
+	// doing this in the caller is what let a bare `kcd watch` receive message
+	// bodies and arm the phone: HasSubscribers arms on this same predicate, so
+	// an SMS subscriber is also permission to start the push.
 	if len(s.filters) == 0 {
-		return true
+		return !isOptInOnly(typ)
 	}
 	for _, f := range s.filters {
 		if f == typ {
+			return true
+		}
+	}
+	return false
+}
+
+func isOptInOnly(typ EventType) bool {
+	for _, t := range OptInOnly() {
+		if t == typ {
 			return true
 		}
 	}
@@ -158,7 +155,7 @@ func NewBus(logger log.Logger) *Bus {
 
 // Subscribe returns a new subscriber that receives events matching the filters.
 // capacity sets the channel buffer size; pass 0 or DefaultSubscriberCap for the standard 64-event buffer.
-// If filters is empty, it receives all events.
+// If filters is empty, it receives everything except the opt-in types.
 func (b *Bus) Subscribe(capacity int, filters ...EventType) *Subscriber {
 	b.mu.Lock()
 

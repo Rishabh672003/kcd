@@ -25,8 +25,8 @@ func (p *SMSPlugin) Handle(ctx context.Context, dev device.Sender, pkt *protocol
 	return nil
 }
 
-// handleMessages parses a batch of SMS messages from the phone, publishing one
-// event per message when [sms] publish_incoming is set.
+// handleMessages parses a batch of SMS messages from the phone and publishes
+// one event per message.
 func (p *SMSPlugin) handleMessages(_ context.Context, dev device.Sender, pkt *protocol.Packet) error {
 	if pkt.Body == nil {
 		return nil
@@ -72,9 +72,9 @@ func (p *SMSPlugin) handleMessages(_ context.Context, dev device.Sender, pkt *pr
 			log.Int64("thread_id", msg.ThreadID),
 		)
 
-		// Gated: the phone keeps pushing for the life of the connection once
-		// armed, so an ungated publish would expose bodies to any watcher.
-		if p.bus != nil && p.cfg.PublishIncoming {
+		// Reaching here means a subscriber named sms.incoming, since an
+		// unfiltered watch stream excludes it. That naming is the consent.
+		if p.bus != nil {
 			payload := map[string]any{
 				"body":      msg.Body,
 				"sender":    sender,

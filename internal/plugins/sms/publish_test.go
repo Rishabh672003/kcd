@@ -31,27 +31,36 @@ func pushOneMessage(t *testing.T, p *SMSPlugin) {
 	}
 }
 
-func TestMessageNotPublishedByDefault(t *testing.T) {
+// Naming sms.incoming is the opt-in: it must both arm the phone and deliver
+// the push. This is the whole consent path in one test.
+func TestNamingSMSDeliversAndArms(t *testing.T) {
 	p, bus := newArmingPlugin(t, config.SMSConfig{})
-	sub := bus.Subscribe(4, events.TypeSMSIncoming)
-	defer sub.Close()
+	dev := &syncCaptureSender{}
+	p.OnConnect(dev)
 
+	// Unfiltered: matches everything, which is the shape a bare watch used to
+	// have. It must not deliver SMS.
+	unfiltered := bus.Subscribe(1)
 	pushOneMessage(t, p)
-
 	select {
-	case ev := <-sub.C:
-		t.Fatalf("published %+v with publish_incoming unset; body would leak to any watcher", ev)
+	case ev := <-unfiltered.C:
+		t.Errorf("unfiltered subscriber received %+v", ev)
 	default:
 	}
-}
+	if bus.HasSubscribers(events.TypeSMSIncoming) {
+		t.Error("an unfiltered subscriber armed the phone")
+	}
+	unfiltered.Close()
 
-func TestMessagePublishedWhenOptedIn(t *testing.T) {
-	p, bus := newArmingPlugin(t, config.SMSConfig{PublishIncoming: true})
-	sub := bus.Subscribe(4, events.TypeSMSIncoming)
+	sub := bus.Subscribe(1, events.TypeSMSIncoming)
 	defer sub.Close()
+	armingSettled(t, dev)
+
+	if got := dev.count(PacketTypeSMSRequestConvs); got != 1 {
+		t.Fatalf("naming sms.incoming sent %d arming requests, want 1", got)
+	}
 
 	pushOneMessage(t, p)
-
 	select {
 	case ev := <-sub.C:
 		body, _ := ev.Payload.(map[string]any)["body"].(string)
@@ -59,53 +68,22 @@ func TestMessagePublishedWhenOptedIn(t *testing.T) {
 			t.Fatalf("body = %q, want %q", body, "Yes")
 		}
 	case <-time.After(time.Second):
-		t.Fatal("no event published with publish_incoming = true")
+		t.Fatal("no event delivered to a subscriber that named sms.incoming")
 	}
 }
 
-func TestNotifyWithoutPublishKeepsBodyOffTheBus(t *testing.T) {
-	p, bus := newArmingPlugin(t, config.SMSConfig{NotifyIncoming: true})
-	sub := bus.Subscribe(4, events.TypeSMSIncoming)
-	defer sub.Close()
-
-	// Arm the way an operator would, so the notification path is live.
-	dev := &syncCaptureSender{}
-	p.OnConnect(dev)
-	sub.Close()
-	sub = bus.Subscribe(4, events.TypeSMSIncoming)
-	defer sub.Close()
-
-	pushOneMessage(t, p)
-
-	select {
-	case ev := <-sub.C:
-		t.Fatalf("notify_incoming alone published %+v to the bus", ev)
-	default:
-	}
-}
-
-func TestDefaultsDoNotPublishIncoming(t *testing.T) {
-	var cfg config.SMSConfig
-	cfg.Defaults()
-	if cfg.PublishIncoming {
-		t.Fatal("SMSConfig.Defaults sets PublishIncoming; message bodies would flow without being asked for")
-	}
-	if cfg.AlwaysArm {
-		t.Fatal("SMSConfig.Defaults sets AlwaysArm; an armed phone cannot be un-armed")
-	}
-}
-
+// An unfiltered subscriber must not match SMS. This is what keeps a bare
+// `kcd watch` from arming the phone.
 func TestUnfilteredSubscriberDoesNotMatchSMS(t *testing.T) {
 	bus := events.NewBus(log.Nop())
-	sub := bus.Subscribe(1, events.AllExceptOptIn()...)
+	sub := bus.Subscribe(1)
 	defer sub.Close()
 
 	for _, typ := range events.OptInOnly() {
 		if bus.HasSubscribers(typ) {
-			t.Errorf("an SMS subscriber is present for %q; a bare watch would arm the phone", typ)
+			t.Errorf("subscriber matches %q; a bare watch would arm the phone", typ)
 		}
 	}
-	// Everything else must still work.
 	for _, typ := range events.All() {
 		if isOptIn(typ) {
 			continue

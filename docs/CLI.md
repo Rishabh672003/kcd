@@ -952,9 +952,8 @@ kcd sms conversation <device-id> <thread-id>
 > message, and kcd cannot stop it. The only way to end that is to stop the SMS
 > plugin on the device.
 >
-> Message bodies do not reach the event bus unless `[sms] publish_incoming` is
-> set, so this does not expose content by itself, but the packets still cross
-> the wire.
+> No client is listening for SMS at that point, so nothing is delivered and
+> nothing is stored. The packets still cross the wire.
 
 ### sms attachment
 
@@ -1180,15 +1179,11 @@ kcd watch --events=sms.incoming
 ```
 
 The phone pushes messages as they arrive, so this needs no polling and no
-request command. Two things must be true:
+request command. Naming the event is the whole opt-in: it is also what arms the
+phone, so `[sms] always_arm` is not needed here.
 
-- `[sms] publish_incoming = true` — otherwise the body never reaches the event
-  bus, because the phone may already be armed and pushing.
-- `[sms] always_arm = true`, or this subscription itself, which is what arms the
-  phone.
-
-SMS is never delivered to an unfiltered `kcd watch`: it must be named with
-`-e`. That is what stops an incidental `kcd watch` from arming the phone.
+SMS is never delivered to an unfiltered `kcd watch`. Naming it with `-e` is what
+arms the phone, which is why an incidental `kcd watch` cannot start the push.
 
 **Raw NDJSON for scripting**
 

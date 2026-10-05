@@ -304,7 +304,7 @@ bus.Publish(events.TypeBatteryUpdate, dev.ID(), map[string]any{
 
 Rules:
 - Subscriber channels have capacity 64. If a slow subscriber fills its channel, events are **dropped** (with a `log.Warn`), never blocked.
-- Filters: `bus.Subscribe(events.TypeBatteryUpdate, events.TypeNotification)` — empty filter = all events.
+- Filters: `bus.Subscribe(events.TypeBatteryUpdate, events.TypeNotification)` — empty filter = all events except the opt-in types (`events.OptInOnly()`, currently the SMS ones), which must be named explicitly.
 - Always call `sub.Close()` when done to avoid goroutine leaks.
 
 ```
@@ -344,7 +344,7 @@ Device state is persisted to `devices.json` on every change. `DeviceInfo` fields
 | Area | Status |
 |---|---|
 | **Mousepad keyboard** special keys | Intentionally unhandled — absent from the KDE Connect spec. |
-| **Un-arming the phone** | Not possible. Android's `haveMessagesBeenRequested` is set by any `sms.request*` packet and nothing clears it, not even plugin teardown, so the phone pushes every new message for the life of the connection. kcd mitigates by gating the bus publish on `[sms] publish_incoming` and excluding SMS from an unfiltered watch stream — that stops bodies leaving the daemon, but the packets still arrive. Ending it needs the plugin disabled on the device, or a protocol change Android does not implement. |
+| **Un-arming the phone** | Not possible. Android's `haveMessagesBeenRequested` is set by any `sms.request*` packet and nothing clears it, not even plugin teardown, so the phone pushes every new message for the life of the connection. kcd's only lever is consent: `Subscriber.matches` refuses the opt-in types for an unfiltered subscriber, so an incidental `kcd watch` neither reads the body nor arms the phone. Once armed by name, ending it needs the plugin disabled on the device. |
 
 ---
 

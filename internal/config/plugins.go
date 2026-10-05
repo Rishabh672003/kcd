@@ -100,12 +100,6 @@ type SMSConfig struct {
 	// NotifyIncoming shows a desktop notification when an SMS is received.
 	NotifyIncoming bool `toml:"notify_incoming"`
 
-	// PublishIncoming sends pushed messages to the event bus, where a
-	// subscriber sees the body. Off by default: the phone latches armed on its
-	// first request and cannot be un-armed, so one `kcd sms conversation` would
-	// otherwise stream bodies to any watcher for the life of the connection.
-	PublishIncoming bool `toml:"publish_incoming"`
-
 	// AlwaysArm asks the phone to push new SMS on every connect. The phone
 	// cannot be un-asked, so this is opt-in; see internal/plugins/sms.
 	AlwaysArm bool `toml:"always_arm"`

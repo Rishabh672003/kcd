@@ -319,14 +319,6 @@ suspend = "systemctl suspend"
 # always_arm = false           # Ask the phone to push new SMS on every
                                # connect, so notifications work with no
                                # client attached.
-# publish_incoming = false     # Put pushed messages on the event bus, where a
-                               # subscriber sees the body. Off by default:
-                               # the phone latches armed on its first request
-                               # and cannot be un-armed, so one
-                               # `kcd sms conversation` would otherwise
-                               # stream bodies to any watcher indefinitely.
-                               # Also required for
-                               # `kcd watch --events sms.incoming`.
 #
 # `kcd sms conversations` / `kcd sms conversation` arm the phone as a side
 # effect — it starts pushing every new message and cannot be stopped from this
