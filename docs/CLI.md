@@ -17,6 +17,8 @@ These flags apply to every command:
 
 `--config` and `--log-level` can also be set via environment variables `KCD_CONFIG` and `KCD_LOG_LEVEL`.
 
+Flags must come before positional arguments (`kcd battery --json <device-id>`, not `kcd battery <device-id> --json`). Anything after the first positional is treated as an argument, so a trailing flag is silently ignored rather than rejected.
+
 ---
 
 ## Configuration
